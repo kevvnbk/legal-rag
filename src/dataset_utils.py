@@ -74,7 +74,7 @@ class LegalBench(DataUtils):
         :param task: Task for which to load the prompt template.
         :return: The prompt template string.
         """
-        task_dir = os.path.join("legalbench", task)
+        task_dir = os.path.join("legalbench/tasks", task)
         prompt_path = os.path.join(task_dir, "base_prompt.txt")
 
         if not os.path.exists(prompt_path):
@@ -100,7 +100,7 @@ class LegalBench(DataUtils):
 
         return self.data if len(self.task) > 1 else self.data.get(self.task[0], None)
     
-    def create_prompt(self, task, data_df):
+    def create_prompts(self, task, data_df):
         """
         Generate prompts from a prompt template and data.
         

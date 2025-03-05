@@ -1,6 +1,7 @@
 from legalbench import evaluation
+from legalbench.tasks import *
 
-def evaluate_model(task, predictions, answers):
+def evaluate(task, predictions, answers):
     """
     Evaluate model performance using the LegalBench evaluation script.
 
@@ -8,4 +9,5 @@ def evaluate_model(task, predictions, answers):
     :param predictions: Model predictions.
     :param answers: Ground truth answers.
     """
-    return evaluation.evaluate(task, predictions, answers["answer"].tolist())
+    
+    return evaluation.evaluate(task, predictions, answers)

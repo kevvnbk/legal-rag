@@ -1,21 +1,21 @@
 import torch
-from transformers import LlamaTokenizer
 from transformers import AutoTokenizer, AutoModelForCausalLM
-import transformers
 
-# from huggingface_hub import login
-
-# login()
+import logging
+logger = logging.getLogger(__name__)
 
 MAX_NEW_TOKENS = 20
-CONTENT_MAX_TOKENS = {
+CONTEXT_MAX_TOKENS = {
     "meta-llama/Llama-2-7b-chat": 4096
 }
 def create_model(model_name, **kwargs):
-    if model_name == "llama7b":
-        return HFModel("meta-llama/Llama-2-7b-chat-hf",**kwargs)
+    model_mapping = {
+        "llama7b": "meta-llama/Llama-2-7b-chat"
+    }
+    if model_name in model_mapping:
+        return HFModel(model_mapping[model_name], **kwargs)
     else:
-        raise NotImplementedError
+        raise ValueError(f"Model {model_name} is not supported. Available models: {', '.join(model_mapping.keys())}")
 
 class BaseModel:
     def __init__(self):
@@ -33,9 +33,10 @@ class BaseModel:
             idx = response.find(pattern)
             if idx != -1:
                 response = response[:idx]
-            return response.strip()
         
-    def wrap_prompt(self, data):
+        return response.strip()
+        
+    def wrap_prompt(self, prompt):
         pass
 
 
@@ -48,15 +49,27 @@ class HFModel(BaseModel):
         self.tokenizer.padding_side = "left"
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.model_name = model_name
-        self.generation_kwargs = {
-            "max_new_tokens": self.max_output_tokens,
-            "pad_token_id": self.tokenizer.eos_token_id,
-            "do_sample": False
-        }
+
         self.clean_str = ['\n\n']
 
     def _query(self, prompt):
-        inputs = self.tokenizer(prompt, return_tensors="pt").to("cuda")
-        outputs = self.model.generate(**inputs, **self.generation_kwargs)
-        result = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        return self._clean_response(result)
+        inputs = self.tokenizer(
+            prompt,
+            return_tensors="pt", 
+            padding=True, 
+            truncation=True, 
+            max_length=512
+        ).to("cuda")
+
+        outputs = self.model.generate(
+            **inputs, 
+            do_sample=False, 
+            top_p=None,
+            temperature=None,
+            max_new_tokens=20,
+            pad_token_id=self.tokenizer.eos_token_id
+        )
+        outputs = outputs[0][len(inputs[0]):]
+        result = self.tokenizer.decode(outputs, skip_special_tokens=True)
+        result = self._clean_response(result)
+        return result

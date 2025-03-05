@@ -7,6 +7,7 @@ import torch
 import json
 
 from src.model import create_model
+from src.evaluation import evaluate
 from src import dataset_utils
 
 def parse_args():
@@ -58,21 +59,32 @@ def main():
     # Create LLM
     llm = create_model(args.model_name)
 
-    response_list = []
+    os.makedirs("results", exist_ok=True)
+
+    evaluation_score = []
 
     for task_name, df in dataset.items():
         logger.info(f"Processing task: {task_name}, {len(df)} records")
 
-        for _, row in tqdm(df.iterrows(), total=len(df), desc=f"Processing {task_name}"):
-            prompt = data_tool.create_prompt(task_name, row)
-
+        prompts = data_tool.create_prompts(task_name, df)
+        response_list = []
+        for prompt in prompts:
             response = llm.query(prompt)
-
             response_list.append({"query": prompt, "response": response})
 
+        with open(f"results/{LOG_NAME}.json", "w") as f:
+            json.dump(response_list, f, indent=4)
+
+        predictions = [entry["response"] for entry in response_list]
+
+        score = evaluate(task_name, predictions, df["answer"].tolist())
+        evaluation_score.append({"task": task_name, "score": score})
+
     # Save responses
-    with open(f"results/{LOG_NAME}.json", "w") as f:
-        json.dump(response_list, f, indent=4)
+    os.makedirs("evaluation", exist_ok=True)
+
+    with open(f"evaluation/eval.json", "w") as f:
+        json.dump(evaluation_score, f, indent=4)
 
 
 if __name__ == '__main__':
