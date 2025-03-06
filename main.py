@@ -11,6 +11,7 @@ from src.evaluation import evaluate
 from src import dataset_utils
 
 from retriever.retriever import retrieve, setup_bm25_index
+from src.astuterag import *
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG testing')
@@ -61,6 +62,30 @@ def main():
     else:
         pass
 
+    results_dir = "results"
+    evaluation_scores = []
+
+
+    for file_name in os.listdir(results_dir):
+        if file_name.endswith(".json"):
+            task_name = file_name.replace(".json", "")
+            
+            with open(os.path.join(results_dir, file_name), "r") as f:
+                response_list = json.load(f)
+            
+            predictions = [entry["response"] for entry in response_list]
+            
+            # Load the corresponding dataset (assuming a function or predefined dataset dictionary exists)
+            if task_name in dataset:
+                df = dataset[task_name]
+                score = evaluate(task_name, predictions, df["answer"].tolist())
+                evaluation_scores.append({"task": task_name, "score": score})
+                logger.info(f"Processed task: {task_name}, Score: {score}")
+            else:
+                logger.warning(f"Dataset for task {task_name} not found!")
+
+    exit()
+
     if args.use_rag:
         bm25, retrieval_documents = setup_bm25_index(
             retrieval_dataset="theatticusproject/cuad-qa",
@@ -70,28 +95,35 @@ def main():
     # Create LLM
     llm = create_model(args.model_name)
 
-    os.makedirs("results", exist_ok=True)
+    os.makedirs("results/astute-rag", exist_ok=True)
 
     evaluation_score = []
 
+    if args.use_rag:
+        def call_llm_fn(prompt: str) -> str:
+            return llm.query(prompt)
+
+        def retrieve_passages_fn(query: str) -> List[str]:
+            # Use the retrieval function that returns a list of documents (ignoring scores)
+            results = retrieve(query, bm25, retrieval_documents, k=args.top_k)
+            return [doc for idx, doc, score in results]
+
     for task_name, df in dataset.items():
         logger.info(f"Processing task: {task_name}, {len(df)} records")
-
         prompts = data_tool.create_prompts(task_name, df)
         response_list = []
         for prompt in tqdm(prompts, desc=f"Processing {task_name}", unit="query"):
             logger.debug(f"Processing query: {prompt}")
 
             if args.use_rag:
-                logger.debug(f"Retrieving documents for query: {prompt}")
-                results = retrieve(prompt, bm25, retrieval_documents, k=args.top_k)
-                retrieved_docs = [doc for idx, doc, score in results]
-                context = "\n".join([f"Document {i+1}: {doc}" for i, doc in enumerate(retrieved_docs)])
-                logger.debug(f"Retrieved documents: {retrieved_docs}")
-
-                rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
-                logger.debug(f"RAG prompt:\n{rag_prompt}")
-                response = llm.query(rag_prompt)
+                # Use the AstuteRAG pipeline to answer the prompt
+                response = astute_rag_pipeline(
+                    query=prompt,
+                    retrieve_passages_fn=retrieve_passages_fn,
+                    call_llm_fn=call_llm_fn,
+                    num_iterations=2,              # Adjust as needed
+                    max_generated_passages=3       # Adjust as needed
+                )
             else:
                 response = llm.query(prompt)
             
