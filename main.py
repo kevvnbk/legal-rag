@@ -5,10 +5,13 @@ import logging
 import os
 import torch
 import json
+from datasets import load_dataset
 
 from src.model import create_model
 from src.evaluation import evaluate
 from src import dataset_utils
+
+from src.retriever import retrieve, setup_bm25_index
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG testing')
@@ -18,8 +21,8 @@ def parse_args():
     parser.add_argument('--dataset_name', type=str, default='legalbench', help='dataset to use')
 
     # RAG settings
-    # parser.add_argument('--top_k', type=int, default=10, help='Top K documents for retrieval')
-    # parser.add_argument('--use_rag', action='store_true', help='Enable RAG')
+    parser.add_argument('--top_k', type=int, default=3, help='Top K documents for retrieval')
+    parser.add_argument('--use_rag', action='store_true', help='Enable RAG')
 
     # other
     parser.add_argument('--debug', action='store_true', help='debug mode')
@@ -49,12 +52,18 @@ def main():
 
     # Load data
     if args.dataset_name == "legalbench":
-        tasks = []
-        split = "train"
+        tasks = ["cuad_affiliate_license-licensee", "cuad_affiliate_license-licensor"]
+        split = "test"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
     else:
         pass
+
+    if args.use_rag:
+        bm25, retrieval_documents = setup_bm25_index(
+            retrieval_dataset="theatticusproject/cuad-qa",
+            top_k=args.top_k
+        )
 
     # Create LLM
     llm = create_model(args.model_name)
@@ -68,11 +77,19 @@ def main():
 
         prompts = data_tool.create_prompts(task_name, df)
         response_list = []
-        for prompt in prompts:
-            response = llm.query(prompt)
+        for prompt in tqdm(prompts, desc=f"Processing {task_name}", unit="query"):
+            if args.use_rag:
+                results = retrieve(prompt, bm25, retrieval_documents, k=args.top_k)
+                retrieved_docs = [doc for idx, doc, score in results]
+                context = "\n".join([f"Document {i+1}: {doc}" for i, doc in enumerate(retrieved_docs)])
+                rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
+                logger.debug(f"RAG prompt:\n{rag_prompt}")
+                response = llm.query(rag_prompt)
+            else:
+                response = llm.query(prompt)
             response_list.append({"query": prompt, "response": response})
 
-        with open(f"results/{LOG_NAME}.json", "w") as f:
+        with open(f"results/{task_name}.json", "w") as f:
             json.dump(response_list, f, indent=4)
 
         predictions = [entry["response"] for entry in response_list]

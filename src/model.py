@@ -2,15 +2,15 @@ import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
 
 import logging
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('legalrag-main')
 
-MAX_NEW_TOKENS = 20
+MAX_NEW_TOKENS = 1000
 CONTEXT_MAX_TOKENS = {
-    "meta-llama/Llama-2-7b-chat": 4096
+    "meta-llama/Llama-2-7b-chat-hf": 4096
 }
 def create_model(model_name, **kwargs):
     model_mapping = {
-        "llama7b": "meta-llama/Llama-2-7b-chat"
+        "llama7b": "meta-llama/Llama-2-7b-chat-hf"
     }
     if model_name in model_mapping:
         return HFModel(model_mapping[model_name], **kwargs)
@@ -58,7 +58,7 @@ class HFModel(BaseModel):
             return_tensors="pt", 
             padding=True, 
             truncation=True, 
-            max_length=512
+            max_length=4096
         ).to("cuda")
 
         outputs = self.model.generate(
@@ -66,7 +66,7 @@ class HFModel(BaseModel):
             do_sample=False, 
             top_p=None,
             temperature=None,
-            max_new_tokens=20,
+            max_new_tokens=500,
             pad_token_id=self.tokenizer.eos_token_id
         )
         outputs = outputs[0][len(inputs[0]):]
