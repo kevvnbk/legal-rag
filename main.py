@@ -5,13 +5,12 @@ import logging
 import os
 import torch
 import json
-from datasets import load_dataset
 
 from src.model import create_model
 from src.evaluation import evaluate
 from src import dataset_utils
 
-from src.retriever import retrieve, setup_bm25_index
+from retriever.retriever import retrieve, setup_bm25_index
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG testing')
@@ -42,7 +41,7 @@ def main():
         handlers=[logging.FileHandler(f"log/{LOG_NAME}.log"), logging.StreamHandler()],
     )
 
-    logger = logging.getLogger('legalrag-main')
+    logger = logging.getLogger(__name__)
     logger.setLevel(logging_level)
 
     logger.info(f"Starting Legal-RAG Experiment with settings: {args}")
@@ -52,8 +51,11 @@ def main():
 
     # Load data
     if args.dataset_name == "legalbench":
-        tasks = ["cuad_affiliate_license-licensee", "cuad_affiliate_license-licensor"]
-        split = "test"
+        tasks = ["cuad_affiliate_license-licensee",
+                 "cuad_no-solicit_of_employees",
+                 "cuad_price_restrictions",
+                 "cuad_warranty_duration"]
+        split = "train"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
     else:
@@ -78,15 +80,22 @@ def main():
         prompts = data_tool.create_prompts(task_name, df)
         response_list = []
         for prompt in tqdm(prompts, desc=f"Processing {task_name}", unit="query"):
+            logger.debug(f"Processing query: {prompt}")
+
             if args.use_rag:
+                logger.debug(f"Retrieving documents for query: {prompt}")
                 results = retrieve(prompt, bm25, retrieval_documents, k=args.top_k)
                 retrieved_docs = [doc for idx, doc, score in results]
                 context = "\n".join([f"Document {i+1}: {doc}" for i, doc in enumerate(retrieved_docs)])
+                logger.debug(f"Retrieved documents: {retrieved_docs}")
+
                 rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
                 logger.debug(f"RAG prompt:\n{rag_prompt}")
                 response = llm.query(rag_prompt)
             else:
                 response = llm.query(prompt)
+            
+            logger.debug(f"Model response: {response}")
             response_list.append({"query": prompt, "response": response})
 
         with open(f"results/{task_name}.json", "w") as f:
@@ -97,11 +106,15 @@ def main():
         score = evaluate(task_name, predictions, df["answer"].tolist())
         evaluation_score.append({"task": task_name, "score": score})
 
+        logger.info(f"Task: {task_name}, Score: {score}")
+
     # Save responses
     os.makedirs("evaluation", exist_ok=True)
 
     with open(f"evaluation/eval.json", "w") as f:
         json.dump(evaluation_score, f, indent=4)
+
+    logger.info("Experiment completed successfully!")
 
 
 if __name__ == '__main__':

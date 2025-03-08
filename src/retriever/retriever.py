@@ -9,11 +9,10 @@ from tqdm.auto import tqdm
 import logging
 import pickle
 
-logger = logging.getLogger('legalrag-main')
+logger = logging.getLogger(__name__)
 
 BM25_PICKLE_PATH = "cuad/bm25_model.pkl"
 BM25_DATASET_PATH = "cuad/bm25_data.json"
-WORD_LIMIT = 300
 
 def load_documents(csv_file):
     """
@@ -49,42 +48,41 @@ def retrieve(query, bm25, documents, k=5):
     top_k_indices = np.argsort(scores)[-k:][::-1]
     return [(idx, documents[idx], scores[idx]) for idx in top_k_indices]
 
-def truncate_text(text, word_limit=WORD_LIMIT):
+def download_cuad_dataset(retrieval_dataset):
     """
-    Truncates a given text to the first `word_limit` words.
+    Download the retrieval dataset from the Hugging Face Hub.
     """
-    return " ".join(text.split()[:word_limit])
+    logger.info(f"Downloading retrieval dataset from Hugging Face: {retrieval_dataset}...")
+    hf_dataset = load_dataset(retrieval_dataset)
+    return hf_dataset["train"]["context"]
 
-def setup_bm25_index(retrieval_dataset, top_k):
-    if os.path.exists(BM25_PICKLE_PATH) and os.path.exists(BM25_DATASET_PATH):
+def setup_bm25_index(retrieval_dataset, dataset_dir="bm25_data"):
+    os.makedirs(dataset_dir, exist_ok=True)
+    dataset_path = os.path.join(dataset_dir, f"dataset.json")
+    pickle_path = os.path.join(dataset_dir, f"bm25_index.pkl")
+
+    if os.path.exists(dataset_path) and os.path.exists(pickle_path):
         logger.info("Loading precomputed BM25 index and dataset...")
 
-        with open(BM25_DATASET_PATH, "r") as f:
+        with open(dataset_path, "r") as f:
             retrieval_texts = json.load(f)
         
-        with open(BM25_PICKLE_PATH, "rb") as f:
+        with open(pickle_path, "rb") as f:
             bm25 = pickle.load(f)
 
         logger.info("BM25 index successfully loaded.")
-        return bm25, retrieval_texts
+    else:
+        retrieval_texts = download_cuad_dataset(retrieval_dataset)
 
-    logger.info(f"Downloading retrieval dataset from Hugging Face: {retrieval_dataset}...")
-    hf_dataset = load_dataset(retrieval_dataset)
+        with open(dataset_path, "w") as f:
+            json.dump(retrieval_texts, f)
+        logger.info("BM25 dataset saved for future use.")
 
-    retrieval_texts = [truncate_text(doc) for doc in hf_dataset["train"]["context"]]
+        logger.info("Building BM25 index...")
+        bm25 = build_bm25_index(retrieval_texts)
 
-    os.makedirs("cuad", exist_ok=True)
+        with open(pickle_path, "wb") as f:
+            pickle.dump(bm25, f)
+        logger.info("BM25 index successfully built and saved.")
 
-    with open(BM25_DATASET_PATH, "w") as f:
-        json.dump(retrieval_texts, f)
-
-    logger.info("BM25 dataset saved for future use.")
-
-    logger.info("Building BM25 index...")
-    bm25 = build_bm25_index(retrieval_texts)
-
-    with open(BM25_PICKLE_PATH, "wb") as f:
-        pickle.dump(bm25, f)
-
-    logger.info("BM25 index successfully built and saved.")
     return bm25, retrieval_texts
