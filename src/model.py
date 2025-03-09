@@ -4,7 +4,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 import logging
 logger = logging.getLogger(__name__)
 
-MAX_NEW_TOKENS = 1000
+MAX_NEW_TOKENS = 500
 CONTEXT_MAX_TOKENS = {
     "meta-llama/Llama-2-7b-hf": 4096
 }
@@ -51,6 +51,7 @@ class HFModel(BaseModel):
             device_map='auto', 
             **kwargs
         )
+        self.model.eval()
         self.tokenizer.padding_side = "left"
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.model_name = model_name
@@ -62,27 +63,31 @@ class HFModel(BaseModel):
 
         tokenized = self.tokenizer(prompt, return_tensors="pt", padding=False)
         input_ids = tokenized.input_ids.to(self.model.device)
+        attention_mask = tokenized.attention_mask.to(self.model.device) if "attention_mask" in tokenized else None
 
-        if input_ids.shape[1] <= max_input_length:
-            truncated_prompt = input_ids
-        else:
-            truncated_prompt = self.tokenizer(
-            prompt,
-            return_tensors="pt", 
-            padding=True, 
-            truncation=True, 
-            max_length=max_input_length
-        ).input_ids.to(self.model.device)
+        if input_ids.shape[1] > max_input_length:
+            tokenized = self.tokenizer(
+                prompt,
+                return_tensors="pt",
+                padding=True,
+                truncation=True,
+                max_length=max_input_length
+            )
+            input_ids = tokenized.input_ids.to(self.model.device)
+            attention_mask = tokenized.attention_mask.to(self.model.device)
         
-        outputs = self.model.generate(
-            input_ids=truncated_prompt,
-            do_sample=False, 
-            top_p=None,
-            temperature=None,
-            max_new_tokens=self.max_output_tokens,
-            pad_token_id=self.tokenizer.eos_token_id
-        )
-        outputs = outputs[0][truncated_prompt.shape[1]:]
-        result = self.tokenizer.decode(outputs, skip_special_tokens=True)
+        with torch.inference_mode():
+            outputs = self.model.generate(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                do_sample=False, 
+                top_p=None,
+                temperature=None,
+                max_new_tokens=self.max_output_tokens,
+                pad_token_id=self.tokenizer.eos_token_id
+            )
+
+        generated_tokens = outputs[0][input_ids.shape[1]:]
+        result = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
         result = self._clean_response(result)
         return result

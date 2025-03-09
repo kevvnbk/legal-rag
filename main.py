@@ -10,7 +10,7 @@ from src.model import create_model
 from src.evaluation import evaluate
 from src import dataset_utils
 
-from retriever.retriever import retrieve, setup_bm25_index
+from src.retriever.retriever import retrieve, setup_bm25_index
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG testing')
@@ -55,7 +55,7 @@ def main():
                  "cuad_no-solicit_of_employees",
                  "cuad_price_restrictions",
                  "cuad_warranty_duration"]
-        split = "train"
+        split = "test"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
     else:
@@ -118,4 +118,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main() 
