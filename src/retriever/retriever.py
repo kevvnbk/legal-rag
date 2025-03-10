@@ -2,26 +2,34 @@ import pandas as pd
 import numpy as np
 import os
 import json
-from rank_bm25 import BM25Okapi
-from datasets import load_dataset
-
 from tqdm.auto import tqdm
 import logging
 import pickle
+
+from rank_bm25 import BM25Okapi
+from datasets import load_dataset
+from langchain.docstore.document import Document
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 logger = logging.getLogger(__name__)
 
 BM25_PICKLE_PATH = "cuad/bm25_model.pkl"
 BM25_DATASET_PATH = "cuad/bm25_data.json"
 
-def load_documents(csv_file):
+def build_documents(texts, chunk_size=1000, chunk_overlap=200):
     """
-    Load documents from a CSV file.
-    Assumes that the CSV has a column named "text" containing the document content.
+    Split long documents into smaller chunks.
     """
-    df = pd.read_csv(csv_file)
-    documents = df['text'].tolist()
-    return documents, df
+    text_splitter = RecursiveCharacterTextSplitter(
+        separators=["Page -", "\n\n", "\n", " ", ""],
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+    )
+    documents = []
+    for text in tqdm(texts, desc="Chunking Documents"):
+        chunks = text_splitter.split_text(text)
+        documents.extend([Document(page_content=chunk) for chunk in chunks])
+    return documents
 
 def tokenize(text):
     """
@@ -56,33 +64,33 @@ def download_cuad_dataset(retrieval_dataset):
     hf_dataset = load_dataset(retrieval_dataset)
     return hf_dataset["train"]["context"]
 
-def setup_bm25_index(retrieval_dataset, dataset_dir="bm25_data"):
+def setup_bm25_index(retrieval_dataset, dataset_dir="bm25_data", dataset_id="cuad", chunk_size=1000, chunk_overlap=200):
     os.makedirs(dataset_dir, exist_ok=True)
-    dataset_path = os.path.join(dataset_dir, f"dataset.json")
-    pickle_path = os.path.join(dataset_dir, f"bm25_index.pkl")
+    dataset_path = os.path.join(dataset_dir, "chunked_dataset.json")
+    pickle_path = os.path.join(dataset_dir, "bm25_index.pkl")
 
     if os.path.exists(dataset_path) and os.path.exists(pickle_path):
-        logger.info("Loading precomputed BM25 index and dataset...")
+        logger.info("Loading precomputed BM25 index and chunked dataset...")
 
         with open(dataset_path, "r") as f:
-            retrieval_texts = json.load(f)
+            chunked_texts = json.load(f)
         
         with open(pickle_path, "rb") as f:
             bm25 = pickle.load(f)
 
         logger.info("BM25 index successfully loaded.")
     else:
-        retrieval_texts = download_cuad_dataset(retrieval_dataset)
-
+        raw_texts = download_cuad_dataset(retrieval_dataset)
+        chunked_texts = build_documents(raw_texts, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         with open(dataset_path, "w") as f:
-            json.dump(retrieval_texts, f)
-        logger.info("BM25 dataset saved for future use.")
+            json.dump(chunked_texts, f)
+        logger.info("Chunked dataset saved for future use.")
 
         logger.info("Building BM25 index...")
-        bm25 = build_bm25_index(retrieval_texts)
+        bm25 = build_bm25_index(chunked_texts)
 
         with open(pickle_path, "wb") as f:
             pickle.dump(bm25, f)
         logger.info("BM25 index successfully built and saved.")
 
-    return bm25, retrieval_texts
+    return bm25, chunked_texts

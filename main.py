@@ -64,7 +64,7 @@ def main():
     if args.use_rag:
         bm25, retrieval_documents = setup_bm25_index(
             retrieval_dataset="theatticusproject/cuad-qa",
-            top_k=args.top_k
+            dataset_dir="bm25_data",
         )
 
     # Create LLM
