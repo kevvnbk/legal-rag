@@ -20,7 +20,7 @@ def parse_args():
     parser.add_argument('--dataset_name', type=str, default='legalbench', help='dataset to use')
 
     # RAG settings
-    parser.add_argument('--top_k', type=int, default=3, help='Top K documents for retrieval')
+    parser.add_argument('--top_k', type=int, default=5, help='Top K documents for retrieval')
     parser.add_argument('--use_rag', action='store_true', help='Enable RAG')
 
     # other
@@ -41,7 +41,7 @@ def main():
         handlers=[logging.FileHandler(f"log/{LOG_NAME}.log"), logging.StreamHandler()],
     )
 
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger('legal-rag')
     logger.setLevel(logging_level)
 
     logger.info(f"Starting Legal-RAG Experiment with settings: {args}")
@@ -55,7 +55,7 @@ def main():
                  "cuad_no-solicit_of_employees",
                  "cuad_price_restrictions",
                  "cuad_warranty_duration"]
-        split = "test"
+        split = "train"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
     else:
@@ -70,7 +70,7 @@ def main():
     # Create LLM
     llm = create_model(args.model_name)
 
-    os.makedirs("results", exist_ok=True)
+    os.makedirs("results/rag", exist_ok=True)
 
     evaluation_score = []
 
@@ -89,7 +89,15 @@ def main():
                 context = "\n".join([f"Document {i+1}: {doc}" for i, doc in enumerate(retrieved_docs)])
                 logger.debug(f"Retrieved documents: {retrieved_docs}")
 
-                rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
+                rag_prompt = f"""
+                Answer the query using the provided context.
+                
+                Context:
+                {context}
+                
+                Query:
+                {prompt}
+                """
                 logger.debug(f"RAG prompt:\n{rag_prompt}")
                 response = llm.query(rag_prompt)
             else:

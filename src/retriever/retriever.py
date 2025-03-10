@@ -11,12 +11,9 @@ from datasets import load_dataset
 from langchain.docstore.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger('legal-rag')
 
-BM25_PICKLE_PATH = "cuad/bm25_model.pkl"
-BM25_DATASET_PATH = "cuad/bm25_data.json"
-
-def build_documents(texts, chunk_size=1000, chunk_overlap=200):
+def build_documents(texts, chunk_size=2000, chunk_overlap=200):
     """
     Split long documents into smaller chunks.
     """
@@ -81,7 +78,9 @@ def setup_bm25_index(retrieval_dataset, dataset_dir="bm25_data", dataset_id="cua
         logger.info("BM25 index successfully loaded.")
     else:
         raw_texts = download_cuad_dataset(retrieval_dataset)
-        chunked_texts = build_documents(raw_texts, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        document_objects = build_documents(raw_texts, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        chunked_texts = [doc.page_content for doc in document_objects]
+
         with open(dataset_path, "w") as f:
             json.dump(chunked_texts, f)
         logger.info("Chunked dataset saved for future use.")
