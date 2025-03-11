@@ -23,6 +23,7 @@ def parse_args():
     # RAG settings
     parser.add_argument('--top_k', type=int, default=3, help='Top K documents for retrieval')
     parser.add_argument('--use_rag', action='store_true', help='Enable RAG')
+    parser.add_argument('--astute_rag', action='store_true', help='Enable AstuteRAG')
 
     # other
     parser.add_argument('--debug', action='store_true', help='debug mode')
@@ -62,30 +63,6 @@ def main():
     else:
         pass
 
-    results_dir = "results"
-    evaluation_scores = []
-
-
-    for file_name in os.listdir(results_dir):
-        if file_name.endswith(".json"):
-            task_name = file_name.replace(".json", "")
-            
-            with open(os.path.join(results_dir, file_name), "r") as f:
-                response_list = json.load(f)
-            
-            predictions = [entry["response"] for entry in response_list]
-            
-            # Load the corresponding dataset (assuming a function or predefined dataset dictionary exists)
-            if task_name in dataset:
-                df = dataset[task_name]
-                score = evaluate(task_name, predictions, df["answer"].tolist())
-                evaluation_scores.append({"task": task_name, "score": score})
-                logger.info(f"Processed task: {task_name}, Score: {score}")
-            else:
-                logger.warning(f"Dataset for task {task_name} not found!")
-
-    exit()
-
     if args.use_rag:
         faiss_index, retrieval_documents, model = setup_faiss_index(
             retrieval_dataset="theatticusproject/cuad-qa"
@@ -104,8 +81,8 @@ def main():
 
         def retrieve_passages_fn(query: str) -> List[str]:
             # Use the retrieval function that returns a list of documents (ignoring scores)
-            results = retrieve(query, bm25, retrieval_documents, k=args.top_k)
-            return [doc for idx, doc, score in results]
+            results = retrieve(query, faiss_index, retrieval_documents, model, k=args.top_k)
+            return [doc for idx, doc, distance in results]
 
     for task_name, df in dataset.items():
         logger.info(f"Processing task: {task_name}, {len(df)} records")
@@ -120,15 +97,17 @@ def main():
                 context = "\n".join([f"Document {i+1}: {doc}" for i, (_, doc, _) in enumerate(retrieved_docs)])
                 rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
                 logger.debug(f"RAG prompt:\n{rag_prompt}")
-                response = llm.query(rag_prompt)
-                # Use the AstuteRAG pipeline to answer the prompt
+                response = llm.query(rag_prompt)     
+
+            elif args.astute_rag:
                 response = astute_rag_pipeline(
                     query=prompt,
                     retrieve_passages_fn=retrieve_passages_fn,
                     call_llm_fn=call_llm_fn,
-                    num_iterations=2,              # Adjust as needed
-                    max_generated_passages=3       # Adjust as needed
+                    num_iterations=2,              
+                    max_generated_passages=3       
                 )
+
             else:
                 response = llm.query(prompt)
             
