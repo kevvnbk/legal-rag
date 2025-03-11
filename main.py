@@ -10,7 +10,7 @@ from src.model import create_model
 from src.evaluation import evaluate
 from src import dataset_utils
 
-from src.retriever.retriever import retrieve, setup_bm25_index
+from src.retriever.retriever import retrieve, setup_faiss_index
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG testing')
@@ -62,9 +62,8 @@ def main():
         pass
 
     if args.use_rag:
-        bm25, retrieval_documents = setup_bm25_index(
-            retrieval_dataset="theatticusproject/cuad-qa",
-            top_k=args.top_k
+        faiss_index, retrieval_documents, model = setup_faiss_index(
+            retrieval_dataset="theatticusproject/cuad-qa"
         )
 
     # Create LLM
@@ -84,11 +83,8 @@ def main():
 
             if args.use_rag:
                 logger.debug(f"Retrieving documents for query: {prompt}")
-                results = retrieve(prompt, bm25, retrieval_documents, k=args.top_k)
-                retrieved_docs = [doc for idx, doc, score in results]
-                context = "\n".join([f"Document {i+1}: {doc}" for i, doc in enumerate(retrieved_docs)])
-                logger.debug(f"Retrieved documents: {retrieved_docs}")
-
+                retrieved_docs = retrieve(prompt, faiss_index, retrieval_documents, model, k=args.top_k)
+                context = "\n".join([f"Document {i+1}: {doc}" for i, (_, doc, _) in enumerate(retrieved_docs)])
                 rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
                 logger.debug(f"RAG prompt:\n{rag_prompt}")
                 response = llm.query(rag_prompt)
@@ -98,7 +94,7 @@ def main():
             logger.debug(f"Model response: {response}")
             response_list.append({"query": prompt, "response": response})
 
-        with open(f"results/{task_name}.json", "w") as f:
+        with open(f"results/rag/{task_name}.json", "w") as f:
             json.dump(response_list, f, indent=4)
 
         predictions = [entry["response"] for entry in response_list]
