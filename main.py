@@ -11,6 +11,8 @@ from src.evaluation import evaluate
 from src import dataset_utils
 
 from src.retriever.retriever import retrieve, setup_faiss_index
+# from defense import MajorityVoting
+from attack import PIA, Poison
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG testing')
@@ -18,6 +20,13 @@ def parse_args():
     # LLM settings
     parser.add_argument('--model_name', type=str, default='llama7b', help='model to use')
     parser.add_argument('--dataset_name', type=str, default='legalbench', help='dataset to use')
+
+    # Attack
+    parser.add_argument('--attack', type=str, default='none', choices=['none', 'Poison', 'PIA'], help='attack method to use')
+    parser.add_argument('--corruption_size', type=int, default=1, help='number of documents to corrupt')
+
+    # # Defense
+    # parser.add_argument('--defense', type=str, default='voting', choices=['none', 'voting'], help='defense method to use')
 
     # RAG settings
     parser.add_argument('--top_k', type=int, default=3, help='Top K documents for retrieval')
@@ -73,6 +82,21 @@ def main():
 
     evaluation_score = []
 
+    no_defense = args.defense == 'none' or args.top_k<=0
+    no_attack = args.attack == 'none' or args.top_k<=0
+
+    if args.defense == 'voting':
+        defended_llm = MajorityVoting(llm)
+
+    if no_attack:
+        pass
+    elif args.attack == 'PIA':
+        attacker = PIA(top_k=args.top_k, poison_num=args.corruption_size, repeat=10, poison_order="backward")
+    elif args.attack == 'Poison':
+        attacker = Poison(top_k=args.top_k, poison_num=args.corruption_size, repeat=10, poison_order="backward")
+    else:
+        NotImplementedError
+
     for task_name, df in dataset.items():
         logger.info(f"Processing task: {task_name}, {len(df)} records")
 
@@ -84,10 +108,27 @@ def main():
             if args.use_rag:
                 logger.debug(f"Retrieving documents for query: {prompt}")
                 retrieved_docs = retrieve(prompt, faiss_index, retrieval_documents, model, k=args.top_k)
-                context = "\n".join([f"Document {i+1}: {doc}" for i, (_, doc, _) in enumerate(retrieved_docs)])
-                rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
-                logger.debug(f"RAG prompt:\n{rag_prompt}")
-                response = llm.query(rag_prompt)
+
+                # attack
+                if not no_attack:
+                    logger.debug(f"Attacking prompt...")
+                    retrieved_docs = attacker.attack(retrieved_docs, task_name)
+                    context = "\n".join([f"Document {i+1}: {doc}" for i, doc in enumerate(retrieved_docs)])
+                    logger.debug(f"Attacked prompt")
+                else:
+                    context = "\n".join([f"Document {i+1}: {doc}" for i, (_, doc, _) in enumerate(retrieved_docs)])
+
+                prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
+                logger.debug(f"RAG prompt:\n{prompt}")
+
+                # # defense
+                # if not no_defense:
+                #     response = defended_llm.query(prompt)
+                # # no defense
+                # else:
+                #     response = llm.query(prompt)
+                response = llm.query(prompt)
+
             else:
                 response = llm.query(prompt)
             
