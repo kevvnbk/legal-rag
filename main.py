@@ -12,7 +12,7 @@ from src import dataset_utils
 
 from src.retriever.retriever import retrieve, setup_faiss_index
 # from defense import MajorityVoting
-from attack import PIA, Poison
+from src.attack import PIA, Poison
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG testing')
@@ -40,7 +40,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    LOG_NAME = f'{args.dataset_name}-{args.model_name}'
+    LOG_NAME = f'{args.dataset_name}-{args.model_name}-{args.attack}'
     logging_level = logging.DEBUG if args.debug else logging.INFO
 
     os.makedirs(f'log', exist_ok=True)
@@ -82,18 +82,18 @@ def main():
 
     evaluation_score = []
 
-    no_defense = args.defense == 'none' or args.top_k<=0
+    # no_defense = args.defense == 'none' or args.top_k<=0
     no_attack = args.attack == 'none' or args.top_k<=0
 
-    if args.defense == 'voting':
-        defended_llm = MajorityVoting(llm)
+    # if args.defense == 'voting':
+    #     defended_llm = MajorityVoting(llm)
 
     if no_attack:
         pass
     elif args.attack == 'PIA':
-        attacker = PIA(top_k=args.top_k, poison_num=args.corruption_size, repeat=10, poison_order="backward")
+        attacker = PIA(top_k=args.top_k, poison_num=args.corruption_size, repeat=5, poison_order="backward")
     elif args.attack == 'Poison':
-        attacker = Poison(top_k=args.top_k, poison_num=args.corruption_size, repeat=10, poison_order="backward")
+        attacker = Poison(top_k=args.top_k, poison_num=args.corruption_size, repeat=5, poison_order="backward")
     else:
         NotImplementedError
 
@@ -135,7 +135,7 @@ def main():
             logger.debug(f"Model response: {response}")
             response_list.append({"query": prompt, "response": response})
 
-        with open(f"results/rag/{task_name}.json", "w") as f:
+        with open(f"results/attack-poison/{task_name}.json", "w") as f:
             json.dump(response_list, f, indent=4)
 
         predictions = [entry["response"] for entry in response_list]
