@@ -11,7 +11,7 @@ from src.evaluation import evaluate
 from src import dataset_utils
 
 from src.retriever.retriever import retrieve, setup_faiss_index
-# from defense import MajorityVoting
+from defense import MajorityVoting
 from src.attack import PIA, Poison
 
 def parse_args():
@@ -25,8 +25,8 @@ def parse_args():
     parser.add_argument('--attack', type=str, default='none', choices=['none', 'Poison', 'PIA'], help='attack method to use')
     parser.add_argument('--corruption_size', type=int, default=1, help='number of documents to corrupt')
 
-    # # Defense
-    # parser.add_argument('--defense', type=str, default='voting', choices=['none', 'voting'], help='defense method to use')
+    # Defense
+    parser.add_argument('--defense', type=str, default='voting', choices=['none', 'voting'], help='defense method to use')
 
     # RAG settings
     parser.add_argument('--top_k', type=int, default=3, help='Top K documents for retrieval')
@@ -40,7 +40,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    LOG_NAME = f'{args.dataset_name}-{args.model_name}-{args.attack}'
+    LOG_NAME = f'{args.dataset_name}-{args.model_name}-{args.attack}-{args.defense}'
     logging_level = logging.DEBUG if args.debug else logging.INFO
 
     os.makedirs(f'log', exist_ok=True)
@@ -82,11 +82,11 @@ def main():
 
     evaluation_score = []
 
-    # no_defense = args.defense == 'none' or args.top_k<=0
+    no_defense = args.defense == 'none' or args.top_k<=0
     no_attack = args.attack == 'none' or args.top_k<=0
 
-    # if args.defense == 'voting':
-    #     defended_llm = MajorityVoting(llm)
+    if args.defense == 'voting':
+        defended_llm = MajorityVoting(llm)
 
     if no_attack:
         pass
@@ -118,24 +118,27 @@ def main():
                 else:
                     context = "\n".join([f"Document {i+1}: {doc}" for i, (_, doc, _) in enumerate(retrieved_docs)])
 
-                prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
-                logger.debug(f"RAG prompt:\n{prompt}")
+                rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
+                logger.debug(f"RAG prompt:\n{rag_prompt}")
 
-                # # defense
-                # if not no_defense:
-                #     response = defended_llm.query(prompt)
-                # # no defense
-                # else:
-                #     response = llm.query(prompt)
-                response = llm.query(prompt)
+                # defense
+                if not no_defense:
+                    response, certificate = defended_llm.query(retrieved_docs, prompt, corruption_size=1)
+                # no defense
+                else:
+                    response = llm.query(rag_prompt)
 
             else:
                 response = llm.query(prompt)
             
             logger.debug(f"Model response: {response}")
-            response_list.append({"query": prompt, "response": response})
 
-        with open(f"results/attack-poison/{task_name}.json", "w") as f:
+            if not no_defense:
+                response_list.append({"query": prompt, "response": response, "certificate": certificate})
+            else:
+                response_list.append({"query": prompt, "response": response})
+
+        with open(f"results/defense-voting/{task_name}.json", "w") as f:
             json.dump(response_list, f, indent=4)
 
         predictions = [entry["response"] for entry in response_list]
