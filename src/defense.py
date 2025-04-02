@@ -39,9 +39,8 @@ class RRAG:
     
 class MajorityVoting(RRAG):
     def query(self, retrieved_docs, prompt, corruption_size):
-        docs = [doc for (_, doc, _) in retrieved_docs]
         separate_responses = []
-        for doc in docs:
+        for doc in retrieved_docs:
             combined_prompt = f"Context:\n{doc}\n\nQuery:\n{prompt}"
             response = self.llm.query(combined_prompt)
             separate_responses.append(response)

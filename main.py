@@ -11,7 +11,7 @@ from src.evaluation import evaluate
 from src import dataset_utils
 
 from src.retriever.retriever import retrieve, setup_faiss_index
-from defense import MajorityVoting
+from src.defense import MajorityVoting
 from src.attack import PIA, Poison
 
 def parse_args():
@@ -107,7 +107,7 @@ def main():
 
             if args.use_rag:
                 logger.debug(f"Retrieving documents for query: {prompt}")
-                retrieved_docs = retrieve(prompt, faiss_index, retrieval_documents, model, k=args.top_k)
+                retrieved_docs = retrieve(prompt, faiss_index, retrieval_documents, model, top_k=args.top_k)
 
                 # attack
                 if not no_attack:
@@ -138,7 +138,7 @@ def main():
             else:
                 response_list.append({"query": prompt, "response": response})
 
-        with open(f"results/defense-voting/{task_name}.json", "w") as f:
+        with open(f"results/top3/{task_name}.json", "w") as f:
             json.dump(response_list, f, indent=4)
 
         predictions = [entry["response"] for entry in response_list]

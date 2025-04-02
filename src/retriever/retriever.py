@@ -14,7 +14,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 
 logger = logging.getLogger('legal-rag')
 
-def build_documents(texts, chunk_size=2000, chunk_overlap=200):
+def build_documents(texts, chunk_size, chunk_overlap):
     """
     Split long documents into smaller chunks.
     """
@@ -63,9 +63,9 @@ def build_faiss_index(documents, model_name="all-MiniLM-L6-v2", nlist=100, batch
     
     return index, model
 
-def retrieve(query, faiss_index, documents, model, k=5):
+def retrieve(query, faiss_index, documents, model, top_k):
     query_embedding = model.encode([query], convert_to_numpy=True)
-    distances, indices = faiss_index.search(query_embedding, k)
+    distances, indices = faiss_index.search(query_embedding, top_k)
     return [(idx, documents[idx], distances[0][i]) for i, idx in enumerate(indices[0])]
 
 def download_cuad_dataset(retrieval_dataset):
@@ -76,7 +76,7 @@ def download_cuad_dataset(retrieval_dataset):
     hf_dataset = load_dataset(retrieval_dataset)
     return hf_dataset["train"]["context"]
 
-def setup_faiss_index(retrieval_dataset, dataset_dir="faiss_data", dataset_id="cuad", chunk_size=1000, chunk_overlap=200):
+def setup_faiss_index(retrieval_dataset, dataset_dir="faiss_data", dataset_id="cuad", chunk_size=2000, chunk_overlap=200):
     os.makedirs(dataset_dir, exist_ok=True)
     dataset_path = os.path.join(dataset_dir, "chunked_dataset_no_duplicates.json")
     index_path = os.path.join(dataset_dir, "faiss_index.bin")
