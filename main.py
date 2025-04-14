@@ -14,6 +14,8 @@ from src.retriever.retriever import retrieve, setup_faiss_index
 from src.defense import MajorityVoting
 from src.attack import PIA, Poison
 
+from tasks import CUAD_TASKS
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG testing')
 
@@ -60,10 +62,7 @@ def main():
 
     # Load data
     if args.dataset_name == "legalbench":
-        tasks = ["cuad_affiliate_license-licensee",
-                 "cuad_no-solicit_of_employees",
-                 "cuad_price_restrictions",
-                 "cuad_warranty_duration"]
+        tasks = CUAD_TASKS
         split = "test"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
@@ -119,6 +118,7 @@ def main():
                     context = "\n".join([f"Document {i+1}: {doc}" for i, (_, doc, _) in enumerate(retrieved_docs)])
 
                 rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
+
                 logger.debug(f"RAG prompt:\n{rag_prompt}")
 
                 # defense
@@ -138,7 +138,7 @@ def main():
             else:
                 response_list.append({"query": prompt, "response": response})
 
-        with open(f"results/top3/{task_name}.json", "w") as f:
+        with open(f"results/{task_name}.json", "w") as f:
             json.dump(response_list, f, indent=4)
 
         predictions = [entry["response"] for entry in response_list]
