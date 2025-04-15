@@ -13,6 +13,7 @@ from src import dataset_utils
 from src.retriever.retriever import retrieve, setup_faiss_index
 from src.defense import MajorityVoting
 from src.attack import PIA, Poison
+from src.tradeoff import TradeOffAnalyzer
 
 from tasks import CUAD_TASKS
 
@@ -34,6 +35,9 @@ def parse_args():
     parser.add_argument('--top_k', type=int, default=3, help='Top K documents for retrieval')
     parser.add_argument('--use_rag', action='store_true', help='Enable RAG')
 
+    # Tradeoff
+    parser.add_argument('--tradeoff', action='store_true', help='Enable tradeoff analysis')
+
     # other
     parser.add_argument('--debug', action='store_true', help='debug mode')
 
@@ -42,7 +46,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    LOG_NAME = f'{args.dataset_name}-{args.model_name}-{args.attack}-{args.defense}'
+    LOG_NAME = f'{args.dataset_name}-{args.model_name}-{args.attack}-{args.defense}-{args.tradeoff}'
     logging_level = logging.DEBUG if args.debug else logging.INFO
 
     os.makedirs(f'log', exist_ok=True)
@@ -84,6 +88,10 @@ def main():
     no_defense = args.defense == 'none' or args.top_k<=0
     no_attack = args.attack == 'none' or args.top_k<=0
 
+    if args.tradeoff:
+        tradeoff_analyzer = TradeOffAnalyzer(model=llm)
+        logger.info("Tradeoff analyzer initialized")
+
     if args.defense == 'voting':
         defended_llm = MajorityVoting(llm)
 
@@ -116,6 +124,26 @@ def main():
                     logger.debug(f"Attacked prompt")
                 else:
                     context = "\n".join([f"Document {i+1}: {doc}" for i, (_, doc, _) in enumerate(retrieved_docs)])
+
+                # tradeoff
+                if tradeoff_analyzer:
+                    logger.debug(f"Extracting tradeoff frames...")
+                    tradeoff_frames = tradeoff_analyzer.extract_tradeoff_frames(prompt)
+                    logger.debug(f"Tradeoff frames: {tradeoff_frames}")
+
+                    # Evaluate documents for each frame
+                    for i, doc in enumerate(retrieved_docs):
+                        evaluation_matrix = []
+                        evaluation_result = tradeoff_analyzer.evaluate_document_all_frames(doc, tradeoff_frames)
+                        logger.debug(f"Evaluation result for document {i+1}: {evaluation_result}")
+                        evaluation_matrix.append(evaluation_result)
+                    
+                    # Create a new prompt for the LLM
+                    context = f"""
+                    Evaluation matrix: {evaluation_matrix}
+                    {context}
+                    """
+                    logger.debug(f"New context for LLM: {context}")
 
                 rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
 
