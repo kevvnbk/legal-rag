@@ -4,13 +4,15 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 import logging
 logger = logging.getLogger(__name__)
 
-MAX_NEW_TOKENS = 500
+MAX_NEW_TOKENS = 1000
 CONTEXT_MAX_TOKENS = {
-    "meta-llama/Llama-2-7b-hf": 4096
+    "meta-llama/Llama-2-7b-chat-hf": 4096,
+    "deepseek-ai/DeepSeek-R1-Distill-Llama-8B": 4096,
 }
 def create_model(model_name, **kwargs):
     model_mapping = {
-        "llama7b": "meta-llama/Llama-2-7b-hf"
+        "llama7b": "meta-llama/Llama-2-7b-chat-hf",
+        "deepseek-r1-8b": "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
     }
     if model_name in model_mapping:
         return HFModel(model_mapping[model_name], **kwargs)
@@ -80,14 +82,14 @@ class HFModel(BaseModel):
             outputs = self.model.generate(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                do_sample=False, 
+                do_sample=True, 
                 top_p=None,
-                temperature=None,
+                temperature=0.6,
                 max_new_tokens=self.max_output_tokens,
                 pad_token_id=self.tokenizer.eos_token_id
             )
 
         generated_tokens = outputs[0][input_ids.shape[1]:]
         result = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
-        result = self._clean_response(result)
+        # result = self._clean_response(result)
         return result

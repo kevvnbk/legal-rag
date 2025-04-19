@@ -21,7 +21,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG testing')
 
     # LLM settings
-    parser.add_argument('--model_name', type=str, default='llama7b', help='model to use')
+    parser.add_argument('--model_name', type=str, default='llama7b', choices=['llama7b', 'deepseek-r1-8b'], help='model to use')
     parser.add_argument('--dataset_name', type=str, default='legalbench', help='dataset to use')
 
     # Attack
@@ -66,7 +66,7 @@ def main():
 
     # Load data
     if args.dataset_name == "legalbench":
-        tasks = CUAD_TASKS
+        tasks = ["cuad_affiliate_license-licensee", "cuad_no-solicit_of_employees", "cuad_price_restrictions", "cuad_warranty_duration"]
         split = "test"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
@@ -88,6 +88,7 @@ def main():
     no_defense = args.defense == 'none' or args.top_k<=0
     no_attack = args.attack == 'none' or args.top_k<=0
 
+    tradeoff_analyzer = None
     if args.tradeoff:
         tradeoff_analyzer = TradeOffAnalyzer(model=llm)
         logger.info("Tradeoff analyzer initialized")
@@ -132,8 +133,8 @@ def main():
                     logger.debug(f"Tradeoff frames: {tradeoff_frames}")
 
                     # Evaluate documents for each frame
+                    evaluation_matrix = []
                     for i, doc in enumerate(retrieved_docs):
-                        evaluation_matrix = []
                         evaluation_result = tradeoff_analyzer.evaluate_document_all_frames(doc, tradeoff_frames)
                         logger.debug(f"Evaluation result for document {i+1}: {evaluation_result}")
                         evaluation_matrix.append(evaluation_result)
@@ -145,7 +146,12 @@ def main():
                     """
                     logger.debug(f"New context for LLM: {context}")
 
-                rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
+                rag_prompt = (
+                    "You are a legal expert. Based on the document, answer the query.\n"
+                    "Label the last clause either Yes or No, based on the question.\n"
+                    "Make sure to begin your response with \"<think>\\n\".\n"
+                    f"Context:\n{context}\n\nQuery:\n{prompt}"
+                )
 
                 logger.debug(f"RAG prompt:\n{rag_prompt}")
 
@@ -155,6 +161,8 @@ def main():
                 # no defense
                 else:
                     response = llm.query(rag_prompt)
+                    response = response.split("</think>")[-1].strip()
+                    response = response.strip().split()[0]
 
             else:
                 response = llm.query(prompt)

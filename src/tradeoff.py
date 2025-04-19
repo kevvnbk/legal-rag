@@ -14,16 +14,16 @@ class TradeOffAnalyzer:
         Returns a list of tuples where each tuple is (Value_A, Value_B).
         """
         prompt = (
-            f"You are a legal expert. Identify up to {max_pairs} value-based trade-offs "
-            f"(e.g., 'Freedom of Expression vs. Institutional Order') relevant to the legal question below.\n\n"
+            f"You are a legal expert. Identify exactly 3 legal value-based trade-offs relevant to the question below."
+            "For each trade-off, output a single line in the following format: Name of Value A vs. Name of Value B\n"
+            "In total you should output ONLY 3 lines.\n"
+            "DO NOT INCLUDE ANY JUSTIFICATIONS. ONLY OUTPUT THE TRADE-OFFS.\n\n"
+            "Make sure to begin your response with \"<think>\\n\"."
             f"Question: \"{query}\"\n\n"
-            "Respond in the following format (one trade-off per line):\n"
-            "1. [Value A] vs. [Value B]\n"
-            "2. [Value A] vs. [Value B]\n"
         )
         response = self.model.query(prompt)
-        frames = response.strip()
-
+        frames = response.split("</think>")[-1].strip()
+ 
         return frames
 
     def evaluate_document_all_frames(self, document: str, frames: List[Tuple[str, str]]) -> Dict:
@@ -38,14 +38,17 @@ class TradeOffAnalyzer:
         """
         prompt = (
             "You are a legal analyst. Evaluate how much the following legal document emphasizes each of the trade-off frames listed below. "
-            "For each frame, provide a score from 1 to 10 for each value. Do not include any justifications.\n\n"
-            "Output your response as a list of score pairs. For each frame, output a single line in the following format:\n"
-            "[[Value A, Value B], [score_for_Value_A, score_for_Value_B]]\n\n"
+            f"Frames: {frames}\n"
+            "For each frame, provide a score from 1 to 10 for each value."
+            "For each frame, output a single line in the following format:\n"
+            "[[Name of Value A, Name of Value B], [Score for Value A, Score for Value B]]\n\n"
+            "In total you should output ONLY 3 lines.\n"
+            "DO NOT INCLUDE ANY JUSTIFICATIONS. ONLY OUTPUT THE VALUE PAIRS AND ITS SCORE PAIRS.\n\n"
+            "Make sure to begin your response with \"<think>\\n\"."
             "Document:\n"
-            f"\"{document.strip()}\"\n\n"
-            "Frames:\n"
-            f"\"{frames}\"\n"
+            f"\"{document}\""
         )
         
         response = self.model.query(prompt)
+        response = response.split("</think>")[-1].strip()
         return response
