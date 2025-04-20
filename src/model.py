@@ -1,16 +1,19 @@
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification
 
 import logging
 logger = logging.getLogger(__name__)
 
 MAX_NEW_TOKENS = 500
 CONTEXT_MAX_TOKENS = {
-    "meta-llama/Llama-2-7b-hf": 4096
+    "meta-llama/Llama-2-7b-hf": 4096,
+    "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B": 2048,
 }
 def create_model(model_name, **kwargs):
     model_mapping = {
-        "llama7b": "meta-llama/Llama-2-7b-hf"
+        "llama7b": "meta-llama/Llama-2-7b-hf",
+        "deepseek-r1-1.5b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
+        "deberta": "potsawee/deberta-v3-large-mnli",
     }
     if model_name in model_mapping:
         return HFModel(model_mapping[model_name], **kwargs)
@@ -91,3 +94,20 @@ class HFModel(BaseModel):
         result = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
         result = self._clean_response(result)
         return result
+    
+class HFModelBERT(BaseModel):
+    def __init__(self, model_name, **kwargs):
+        super().__init__()
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+
+    def query(self, textA, textB):
+        inputs = self.tokenizer.batch_encode_plus(
+            batch_text_or_text_pairs=[(textA, textB)],
+            add_special_tokens=True, return_tensors="pt",
+        )
+        logits = self.model(**inputs).logits
+        probs = torch.softmax(logits, dim=-1)[0]
+        # probs = [0.7080, 0.2920], meaning that prob(entail) = 0.708, prob(contradict) = 0.292
+        return probs
+    

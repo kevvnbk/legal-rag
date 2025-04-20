@@ -13,6 +13,7 @@ from src import dataset_utils
 from src.retriever.retriever import retrieve, setup_faiss_index
 from src.defense import MajorityVoting
 from src.attack import PIA, Poison
+from src.pirac.pirac import PIRAC
 
 from tasks import CUAD_TASKS
 
@@ -20,7 +21,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG testing')
 
     # LLM settings
-    parser.add_argument('--model_name', type=str, default='llama7b', help='model to use')
+    parser.add_argument('--model_name', type=str, default='deepseek-r1-1.5b', choices=['llama7b', 'deepseek-r1-1.5b'], help='model to use')
     parser.add_argument('--dataset_name', type=str, default='legalbench', help='dataset to use')
 
     # Attack
@@ -33,6 +34,9 @@ def parse_args():
     # RAG settings
     parser.add_argument('--top_k', type=int, default=3, help='Top K documents for retrieval')
     parser.add_argument('--use_rag', action='store_true', help='Enable RAG')
+
+    # PIRAC settings
+    parser.add_argument('--use_pirac', action='store_true', help='Enable PIRAC')
 
     # other
     parser.add_argument('--debug', action='store_true', help='debug mode')
@@ -108,25 +112,34 @@ def main():
                 logger.debug(f"Retrieving documents for query: {prompt}")
                 retrieved_docs = retrieve(prompt, faiss_index, retrieval_documents, model, top_k=args.top_k)
 
-                # attack
-                if not no_attack:
-                    logger.debug(f"Attacking prompt...")
-                    retrieved_docs = attacker.attack(retrieved_docs, task_name)
-                    context = "\n".join([f"Document {i+1}: {doc}" for i, doc in enumerate(retrieved_docs)])
-                    logger.debug(f"Attacked prompt")
+                if args.use_pirac:
+                    logger.debug(f"Using PIRAC")
+                    nli_model = create_model("deberta")
+                    pirac = PIRAC(llm, nli_model)
+                    
+                    irac_outputs = pirac.run(query=prompt , docs=retrieved_docs)
+                    response = irac_outputs['conclusion']
+                    
                 else:
-                    context = "\n".join([f"Document {i+1}: {doc}" for i, (_, doc, _) in enumerate(retrieved_docs)])
+                    # attack
+                    if not no_attack:
+                        logger.debug(f"Attacking prompt...")
+                        retrieved_docs = attacker.attack(retrieved_docs, task_name)
+                        context = "\n".join([f"Document {i+1}: {doc}" for i, doc in enumerate(retrieved_docs)])
+                        logger.debug(f"Attacked prompt")
+                    else:
+                        context = "\n".join([f"Document {i+1}: {doc}" for i, (_, doc, _) in enumerate(retrieved_docs)])
 
-                rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
+                    rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
 
-                logger.debug(f"RAG prompt:\n{rag_prompt}")
+                    logger.debug(f"RAG prompt:\n{rag_prompt}")
 
-                # defense
-                if not no_defense:
-                    response, certificate = defended_llm.query(retrieved_docs, prompt, corruption_size=1)
-                # no defense
-                else:
-                    response = llm.query(rag_prompt)
+                    # defense
+                    if not no_defense:
+                        response, certificate = defended_llm.query(retrieved_docs, prompt, corruption_size=1)
+                    # no defense
+                    else:
+                        response = llm.query(rag_prompt)
 
             else:
                 response = llm.query(prompt)
