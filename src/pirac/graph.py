@@ -5,15 +5,18 @@ class ConsistencyGraph:
         self.nli = nli_model
 
     def score_edge(self, textA: str, textB: str) -> float:
-        inputs = {"textA": textA, "textB": textB}
-        result = self.nli.query(inputs)
+        result = self.nli.query(textA, textB)
         return result[0]
 
     def compute_ics(self, irac: Dict[str, str], weights: Dict[Tuple[str, str], float] = None) -> Tuple[float, Dict]:
+        # edges = [
+        #     ('issue', 'rule'),
+        #     ('rule', 'application'),
+        #     ('application', 'conclusion')
+        # ]
         edges = [
-            ('issue', 'rule'),
-            ('rule', 'application'),
-            ('application', 'conclusion')
+            ('issue', 'analysis'),
+            ('analysis', 'conclusion')
         ]
         scores = {}
         for (src, tgt) in edges:

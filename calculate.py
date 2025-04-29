@@ -1,4 +1,5 @@
 from datasets import load_dataset
+from src.evaluation import evaluate
 import json
 
 def evaluate_correctness(response, gold_answer):
@@ -38,7 +39,8 @@ def calculate_cacc(response_list, gold_answers):
 
 def main():
     tasks = [
-        "cuad_no-solicit_of_employees",
+        # "cuad_affiliate_license-licensee",
+        # "cuad_no-solicit_of_employees",
         "cuad_price_restrictions",
         "cuad_warranty_duration"
     ]
@@ -49,15 +51,20 @@ def main():
         
         # Read the response list from the JSON file.
         # Note: Opening the file in read ("r") mode.
-        with open(f"results/top3/defense-voting/{task}.json", "r") as f:
+        with open(f"results/cuad_price_restrictions-copy.json", "r") as f:
             response_list = json.load(f)
         
         # Assuming the gold answers are stored in a column "answer" in the test split.
         # Adjust according to your actual dataset structure.
-        gold_answers = dataset['test']['answer'] if 'test' in dataset else dataset['train']['answer']
+        # gold_answers = dataset['test']['answer'] if 'test' in dataset else dataset['train']['answer']
         
-        cacc = calculate_cacc(response_list, gold_answers)
-        print(f"Task: {task}, Certifiable Accuracy (cacc): {cacc:.4f}")
+        # cacc = calculate_cacc(response_list, gold_answers)
+        # print(f"Task: {task}, Certifiable Accuracy (cacc): {cacc:.4f}")
+
+        predictions = [entry["response"] for entry in response_list]
+
+        score = evaluate(task, predictions, dataset["test"]["answer"])
+        print(f"Task: {task}, Score: {score:.4f}")
 
 if __name__ == '__main__':
     main()

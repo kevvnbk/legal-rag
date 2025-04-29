@@ -10,10 +10,10 @@ from src.model import create_model
 from src.evaluation import evaluate
 from src import dataset_utils
 
-from src.retriever.retriever import retrieve, setup_faiss_index
+from src.retriever.retriever import retrieve, setup_faiss_index, clean_document
 from src.defense import MajorityVoting
 from src.attack import PIA, Poison
-from src.pirac.pirac import PIRAC
+from src.pirac.pirac import PIRAC, IAC
 
 from tasks import CUAD_TASKS
 
@@ -21,7 +21,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG testing')
 
     # LLM settings
-    parser.add_argument('--model_name', type=str, default='deepseek-r1-1.5b', choices=['llama7b', 'deepseek-r1-1.5b'], help='model to use')
+    parser.add_argument('--model_name', type=str, default='deepseek-r1-1.5b', choices=['llama7b', 'llama3.2-1b', 'llama3qa-8b', 'deepseek-r1-1.5b'], help='model to use')
     parser.add_argument('--dataset_name', type=str, default='legalbench', help='dataset to use')
 
     # Attack
@@ -46,14 +46,16 @@ def parse_args():
 
 def main():
     args = parse_args()
-    LOG_NAME = f'{args.dataset_name}-{args.model_name}-{args.attack}-{args.defense}'
+    LOG_NAME = f'TEST-{args.dataset_name}-{args.model_name}-{args.use_pirac}'
     logging_level = logging.DEBUG if args.debug else logging.INFO
 
     os.makedirs(f'log', exist_ok=True)
 
     logging.basicConfig(
+        # level=logging_level,
         format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-        handlers=[logging.FileHandler(f"log/{LOG_NAME}.log"), logging.StreamHandler()],
+        handlers=[logging.FileHandler(f"log/{LOG_NAME}.log", encoding="utf-8"), logging.StreamHandler()],
+        # force=True
     )
 
     logger = logging.getLogger(__name__)
@@ -66,7 +68,7 @@ def main():
 
     # Load data
     if args.dataset_name == "legalbench":
-        tasks = CUAD_TASKS
+        tasks = ["cuad_affiliate_license-licensee", "cuad_no-solicit_of_employees", "cuad_price_restrictions", "cuad_warranty_duration"]
         split = "test"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
@@ -80,6 +82,10 @@ def main():
 
     # Create LLM
     llm = create_model(args.model_name)
+
+    if args.use_pirac:
+        nli_model = create_model("deberta", device="cpu")
+        pirac = IAC(llm, nli_model)
 
     os.makedirs("results", exist_ok=True)
 
@@ -114,11 +120,10 @@ def main():
 
                 if args.use_pirac:
                     logger.debug(f"Using PIRAC")
-                    nli_model = create_model("deberta")
-                    pirac = PIRAC(llm, nli_model)
                     
                     irac_outputs = pirac.run(query=prompt , docs=retrieved_docs)
                     response = irac_outputs['conclusion']
+                    logger.info(f"Response: {response}")
                     
                 else:
                     # attack
@@ -128,9 +133,17 @@ def main():
                         context = "\n".join([f"Document {i+1}: {doc}" for i, doc in enumerate(retrieved_docs)])
                         logger.debug(f"Attacked prompt")
                     else:
-                        context = "\n".join([f"Document {i+1}: {doc}" for i, (_, doc, _) in enumerate(retrieved_docs)])
+                        context = "\n".join([f"Document {i+1}: {clean_document(doc)}" for i, (_, doc, _) in enumerate(retrieved_docs)])
 
-                    rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
+                    rag_prompt = f"""
+                            You are a legal‑analysis assistant.  Think step‑by‑step between <think> and </think>.\n
+                            Given the following query and legal materials, label the query either Yes or No.\n
+                            After </think> only state the answer and DO NOT provide explanations.\n\n
+                            Query:\n
+                            {prompt}\n\n
+                            Legal Materials:\n
+                            \"{context}\"\n\n
+                            """
 
                     logger.debug(f"RAG prompt:\n{rag_prompt}")
 

@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import os
 import json
+import re
+import textwrap
 from datasets import load_dataset
 
 from tqdm.auto import tqdm
@@ -122,3 +124,14 @@ def setup_faiss_index(retrieval_dataset, dataset_dir="faiss_data", dataset_id="c
         logger.info("FAISS index successfully built and saved.")
 
     return index, chunked_texts, model
+
+
+# Helper function to clean document context for LLM
+def clean_document(doc: str) -> str:
+    """
+    Remove extra indentation and collapse whitespace so the LLM receives
+    a compact, uniform string.
+    """
+    doc = textwrap.dedent(doc)
+    doc = re.sub(r'\s+', ' ', doc)
+    return doc.strip()
