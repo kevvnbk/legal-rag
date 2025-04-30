@@ -4,7 +4,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoModelForSequenceClassification,
     TopPLogitsWarper,
-    LogitsWarperList,
+    #LogitsWarperList,
 )
 import torch
 
@@ -89,7 +89,8 @@ class IRAC:
         using soft logit biasing and top-p sampling.
         """
         input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.device)
-        logits_warper = LogitsWarperList([TopPLogitsWarper(top_p=top_p)])
+        #logits_warper = LogitsWarperList([TopPLogitsWarper(top_p=top_p)])
+        logits_warper = [TopPLogitsWarper(top_p=top_p)]
         outputs = self.model.generate(
             input_ids,
             max_new_tokens=50,
