@@ -13,7 +13,8 @@ from src import dataset_utils
 from src.retriever.retriever import retrieve, setup_faiss_index, clean_document
 from src.defense import MajorityVoting
 from src.attack import PIA, Poison
-from src.pirac.pirac import PIRAC, IAC
+from src.pirac.irac import IRAC
+from src.pirac.irac_batch import IRACBatch
 
 from tasks import CUAD_TASKS
 
@@ -21,7 +22,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG testing')
 
     # LLM settings
-    parser.add_argument('--model_name', type=str, default='deepseek-r1-1.5b', choices=['llama7b', 'llama3.2-1b', 'llama3qa-8b', 'deepseek-r1-1.5b'], help='model to use')
+    parser.add_argument('--model_name', type=str, default='deepseek-r1-1.5b', choices=['llama7b', 'llama3.2-1b', 'llama3qa-8b', 'deepseek-r1-1.5b', 'saul7b'], help='model to use')
     parser.add_argument('--dataset_name', type=str, default='legalbench', help='dataset to use')
 
     # Attack
@@ -35,8 +36,8 @@ def parse_args():
     parser.add_argument('--top_k', type=int, default=3, help='Top K documents for retrieval')
     parser.add_argument('--use_rag', action='store_true', help='Enable RAG')
 
-    # PIRAC settings
-    parser.add_argument('--use_pirac', action='store_true', help='Enable PIRAC')
+    # IRAC settings
+    parser.add_argument('--use_irac', action='store_true', help='Enable IRAC')
 
     # other
     parser.add_argument('--debug', action='store_true', help='debug mode')
@@ -46,7 +47,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    LOG_NAME = f'TEST-{args.dataset_name}-{args.model_name}-{args.use_pirac}'
+    LOG_NAME = f'{args.dataset_name}-{args.model_name}-{args.use_rag}-{args.use_irac}'
     logging_level = logging.DEBUG if args.debug else logging.INFO
 
     os.makedirs(f'log', exist_ok=True)
@@ -68,7 +69,7 @@ def main():
 
     # Load data
     if args.dataset_name == "legalbench":
-        tasks = ["cuad_affiliate_license-licensee", "cuad_no-solicit_of_employees", "cuad_price_restrictions", "cuad_warranty_duration"]
+        tasks = ["cuad_price_restrictions", "cuad_warranty_duration"]
         split = "test"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
@@ -83,9 +84,12 @@ def main():
     # Create LLM
     llm = create_model(args.model_name)
 
-    if args.use_pirac:
-        nli_model = create_model("deberta", device="cpu")
-        pirac = IAC(llm, nli_model)
+    if args.use_irac:
+        nli = create_model("deberta")
+        irac = IRACBatch(
+            llm_model=llm,
+            nli_model=nli,
+        )
 
     os.makedirs("results", exist_ok=True)
 
@@ -118,11 +122,12 @@ def main():
                 logger.debug(f"Retrieving documents for query: {prompt}")
                 retrieved_docs = retrieve(prompt, faiss_index, retrieval_documents, model, top_k=args.top_k)
 
-                if args.use_pirac:
-                    logger.debug(f"Using PIRAC")
+                if args.use_irac:
+                    logger.debug(f"Using IRAC")
                     
-                    irac_outputs = pirac.run(query=prompt , docs=retrieved_docs)
-                    response = irac_outputs['conclusion']
+                    irac_outputs = irac.run(query=prompt , docs=retrieved_docs)
+                    # logger.info(f"IRAC outputs: {irac_outputs}")
+                    response = irac_outputs
                     logger.info(f"Response: {response}")
                     
                 else:
@@ -135,15 +140,15 @@ def main():
                     else:
                         context = "\n".join([f"Document {i+1}: {clean_document(doc)}" for i, (_, doc, _) in enumerate(retrieved_docs)])
 
-                    rag_prompt = f"""
-                            You are a legal‑analysis assistant.  Think step‑by‑step between <think> and </think>.\n
-                            Given the following query and legal materials, label the query either Yes or No.\n
-                            After </think> only state the answer and DO NOT provide explanations.\n\n
-                            Query:\n
-                            {prompt}\n\n
-                            Legal Materials:\n
-                            \"{context}\"\n\n
-                            """
+                    rag_prompt = (
+                            "You are a legal reasoning assistant. Using the legal materials below, "
+                            "answer the question with one word, either 'Yes' or 'No'.\n"
+                            "Query:\n"
+                            f"{prompt}\n\n"
+                            "Legal Materials:\n"
+                            f"\"{context}\"\n\n"
+                            "Answer (Yes or No):"
+                    )
 
                     logger.debug(f"RAG prompt:\n{rag_prompt}")
 
@@ -155,6 +160,11 @@ def main():
                         response = llm.query(rag_prompt)
 
             else:
+                new_prompt = (
+                    "You are a legal reasoning assistant. Answer the question with one word, either 'Yes' or 'No'."
+                    f"{prompt}\n"
+                    "Answer (Yes or No):"
+                )
                 response = llm.query(prompt)
             
             logger.debug(f"Model response: {response}")

@@ -11,6 +11,7 @@ CONTEXT_MAX_TOKENS = {
     "meta-llama/Llama-3.2-1B-Instruct": 8000,
     "nvidia/Llama3-ChatQA-1.5-8B": 128_000,
     "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B": 8192,
+    "Equall/Saul-7B-Instruct-v1": 4096,
 }
 def create_model(model_name, **kwargs):
     model_mapping = {
@@ -19,6 +20,8 @@ def create_model(model_name, **kwargs):
         "llama3qa-8b": "nvidia/Llama3-ChatQA-1.5-8B",
         "deepseek-r1-1.5b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
         "deberta": "potsawee/deberta-v3-large-mnli",
+        "saul7b": "Equall/Saul-7B-Instruct-v1",
+        "bart-large": "facebook/bart-large-mnli",
     }
     if model_name in model_mapping:
         if model_name == "deberta":
@@ -52,7 +55,7 @@ class BaseModel:
         Keep only the portion that follows the closing </think> tag,
         then run the other clean‑ups you already defined.
         """
-        close_tag = "</think>"
+        close_tag = "[/INST]"
         idx = response.find(close_tag)
         if idx != -1:
             response = response[idx + len(close_tag):]   # text *after* </think>
@@ -90,7 +93,7 @@ class HFModel(BaseModel):
         model_max_length = CONTEXT_MAX_TOKENS.get(self.model_name, 2048)
         max_input_length = max(1, model_max_length - self.max_output_tokens)
 
-        tokenized = self.tokenizer(prompt, return_tensors="pt", padding=False)
+        tokenized = self.tokenizer(prompt, return_tensors="pt", padding=False, return_attention_mask=True)
         input_ids = tokenized.input_ids.to(self.model.device)
         attention_mask = tokenized.attention_mask.to(self.model.device) if "attention_mask" in tokenized else None
 
@@ -100,7 +103,8 @@ class HFModel(BaseModel):
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
-                max_length=max_input_length
+                max_length=max_input_length,
+                return_attention_mask=True,
             )
             input_ids = tokenized.input_ids.to(self.model.device)
             attention_mask = tokenized.attention_mask.to(self.model.device)
@@ -130,18 +134,18 @@ class HFModel(BaseModel):
         return result
     
 class HFModelBERT(BaseModel):
-    def __init__(self, model_name, **kwargs):
+    def __init__(self, model_name, device=None, **kwargs):
         super().__init__()
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.to(self.device)
 
     def query(self, textA, textB):
-        inputs = self.tokenizer.batch_encode_plus(
-            batch_text_or_text_pairs=[(textA, textB)],
-            add_special_tokens=True, return_tensors="pt",
-        )
-        logits = self.model(**inputs).logits
-        probs = torch.softmax(logits, dim=-1)[0]
-        # probs = [0.7080, 0.2920], meaning that prob(entail) = 0.708, prob(contradict) = 0.292
-        return probs
-    
+        inputs = self.tokenizer.encode(textA, textB, return_tensors="pt", truncation=True)
+        with torch.no_grad():
+            logits = self.model(inputs.to(self.device))[0]
+            probs = logits.softmax(dim=-1)[0]
+        
+        prob_neutral = probs[1].item()
+        return prob_neutral
