@@ -21,6 +21,7 @@ def create_model(model_name, **kwargs):
         "deepseek-r1-1.5b": "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
         "deberta": "potsawee/deberta-v3-large-mnli",
         "saul7b": "Equall/Saul-7B-Instruct-v1",
+        #"saul7b": "./Saul-7B-Instruct-v1",
         "bart-large": "facebook/bart-large-mnli",
     }
     if model_name in model_mapping:
@@ -74,12 +75,13 @@ class HFModel(BaseModel):
     def __init__(self, model_name, max_output_tokens=None, **kwargs):
         super().__init__()
         self.max_output_tokens = MAX_NEW_TOKENS if max_output_tokens is None else max_output_tokens
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, force_download=True)
         default_kw = dict(
             torch_dtype=torch.bfloat16,
             device_map="auto",
             low_cpu_mem_usage=True,
             trust_remote_code=True,
+            force_download=True
         )
         default_kw.update(kwargs)
         self.model = AutoModelForCausalLM.from_pretrained(model_name, **default_kw)
@@ -136,7 +138,7 @@ class HFModel(BaseModel):
 class HFModelBERT(BaseModel):
     def __init__(self, model_name, device=None, **kwargs):
         super().__init__()
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
         self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
