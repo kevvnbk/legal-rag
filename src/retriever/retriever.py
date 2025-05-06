@@ -70,13 +70,19 @@ def build_faiss_index(documents, model_name="all-MiniLM-L6-v2", nlist=100, batch
     """
     Build and return a FAISS approximate index using IndexIVFFlat.
     Documents should be a list of Document objects
+    Documents should be a list of Document objects
     """
     model = SentenceTransformer(model_name)
+
+    texts = [doc.page_content for doc in documents]
 
     texts = [doc.page_content for doc in documents]
     
     # Compute embeddings in batches
     all_embeddings = []
+    for i in tqdm(range(0, len(texts), batch_size), desc="Encoding documents"):
+        batch_texts = texts[i:i+batch_size]
+        batch_embeddings = model.encode(batch_texts, convert_to_numpy=True)
     for i in tqdm(range(0, len(texts), batch_size), desc="Encoding documents"):
         batch_texts = texts[i:i+batch_size]
         batch_embeddings = model.encode(batch_texts, convert_to_numpy=True)
@@ -119,11 +125,21 @@ def setup_faiss_index(json_files, dataset_dir="faiss_data",
     """
     Load or build a FAISS index from pre-chunked JSON files.
     """
+def setup_faiss_index(json_files, dataset_dir="faiss_data",
+                      index_filename="faiss_index.bin", docs_filename="documents.pkl",
+                      model_name="all-MiniLM-L6-v2", nlist=100, batch_size=128):
+    """
+    Load or build a FAISS index from pre-chunked JSON files.
+    """
     os.makedirs(dataset_dir, exist_ok=True)
+    index_path = os.path.join(dataset_dir, index_filename)
+    docs_path = os.path.join(dataset_dir, docs_filename)
     index_path = os.path.join(dataset_dir, index_filename)
     docs_path = os.path.join(dataset_dir, docs_filename)
     model_path = os.path.join(dataset_dir, "model_name.txt")
 
+    if os.path.exists(index_path) and os.path.exists(docs_path) and os.path.exists(model_path):
+        logger.info("Loading precomputed FAISS index and documents...")
     if os.path.exists(index_path) and os.path.exists(docs_path) and os.path.exists(model_path):
         logger.info("Loading precomputed FAISS index and documents...")
         index = faiss.read_index(index_path)
@@ -131,7 +147,16 @@ def setup_faiss_index(json_files, dataset_dir="faiss_data",
         model = SentenceTransformer(saved_model_name)
         with open(docs_path, "rb") as f:
             documents = pickle.load(f)
+        saved_model_name = open(model_path, "r").read().strip()
+        model = SentenceTransformer(saved_model_name)
+        with open(docs_path, "rb") as f:
+            documents = pickle.load(f)
     else:
+        logger.info("Building FAISS index from scratch...")
+        documents = load_chunked_json_files(json_files)
+        index, model = build_faiss_index(
+            documents, model_name=model_name, nlist=nlist, batch_size=batch_size
+        )
         logger.info("Building FAISS index from scratch...")
         documents = load_chunked_json_files(json_files)
         index, model = build_faiss_index(
@@ -144,7 +169,12 @@ def setup_faiss_index(json_files, dataset_dir="faiss_data",
         with open(docs_path, "wb") as f:
             pickle.dump(documents, f)
         logger.info("FAISS index and documents saved.")
+            f.write(model_name)
+        with open(docs_path, "wb") as f:
+            pickle.dump(documents, f)
+        logger.info("FAISS index and documents saved.")
 
+    return index, documents, model
     return index, documents, model
 
 
