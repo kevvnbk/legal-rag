@@ -18,6 +18,8 @@ from src.pirac.irac_batch import IRACBatch
 
 from tasks import CUAD_TASKS
 
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG testing')
 
@@ -30,7 +32,7 @@ def parse_args():
     parser.add_argument('--corruption_size', type=int, default=1, help='number of documents to corrupt')
 
     # Defense
-    parser.add_argument('--defense', type=str, default='voting', choices=['none', 'voting'], help='defense method to use')
+    parser.add_argument('--defense', type=str, default='none', choices=['none', 'voting'], help='defense method to use')
 
     # RAG settings
     parser.add_argument('--top_k', type=int, default=3, help='Top K documents for retrieval')
@@ -69,7 +71,7 @@ def main():
 
     # Load data
     if args.dataset_name == "legalbench":
-        tasks = ["cuad_price_restrictions", "cuad_warranty_duration"]
+        tasks = ["cuad_affiliate_license-licensee", "cuad_no-solicit_of_employees", "cuad_price_restrictions", "cuad_warranty_duration"]
         split = "test"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
@@ -77,9 +79,8 @@ def main():
         pass
 
     if args.use_rag:
-        faiss_index, retrieval_documents, model = setup_faiss_index(
-            retrieval_dataset="theatticusproject/cuad-qa"
-        )
+        json_files = ["corpus/state_code.jsonl", "corpus/uscode.jsonl"]
+        faiss_index, retrieval_documents, model = setup_faiss_index(json_files)
 
     # Create LLM
     llm = create_model(args.model_name)
@@ -138,7 +139,12 @@ def main():
                         context = "\n".join([f"Document {i+1}: {doc}" for i, doc in enumerate(retrieved_docs)])
                         logger.debug(f"Attacked prompt")
                     else:
-                        context = "\n".join([f"Document {i+1}: {clean_document(doc)}" for i, (_, doc, _) in enumerate(retrieved_docs)])
+                        context = "\n".join(
+                            [
+                                f"Document {i+1}: {doc.page_content}"
+                                for i, (doc, _) in enumerate(retrieved_docs)
+                            ]
+                        )
 
                     rag_prompt = (
                             "You are a legal reasoning assistant. Using the legal materials below, "

@@ -13,10 +13,13 @@ from src.pirac.irac import IRAC#, PIRAC
 from src.pirac.irac_batch import IRACBatch
 
 from tasks import CUAD_TASKS
+from legalbench.tasks import INTERPRETATION_TASKS
 
 import random
 import torch
 import numpy as np  # 향후 사용 대비
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2"
 
 # 랜덤 시드 고정
 def set_seed(seed: int = 42):
@@ -69,7 +72,7 @@ def main():
     device = 'cuda' if torch.cuda.is_available() else "cpu"
     
     if args.dataset_name == "legalbench":
-        tasks = ["cuad_affiliate_license-licensee", "cuad_no-solicit_of_employees", "cuad_price_restrictions", "cuad_warranty_duration"]
+        tasks = INTERPRETATION_TASKS
         split = "test"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
@@ -78,7 +81,8 @@ def main():
         pass
 
     if args.use_rag:
-        faiss_index, retrieval_documents, retriever_model = setup_faiss_index("theatticusproject/cuad-qa")
+        json_files = ["corpus/state_code.jsonl", "corpus/uscode.jsonl"]
+        faiss_index, retrieval_documents, retriever_model = setup_faiss_index(json_files)
 
     # Create LLM
     llm = create_model(args.model_name)

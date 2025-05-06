@@ -23,7 +23,15 @@ def load_chunked_json_files(file_paths):
     documents = []
     for file_path in file_paths:
         with open(file_path, "r") as f:
-            records = json.load(f)
+            lines = [line for line in f if line.strip()]
+            records = [
+                json.loads(line)
+                for line in tqdm(
+                    lines,
+                    desc=f"Parsing {os.path.basename(file_path)}",
+                    leave=False
+                )
+            ]
         for rec in records:
             documents.append(Document(
                 page_content=rec["contents"],
