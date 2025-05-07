@@ -16,9 +16,9 @@ from src.attack import PIA, Poison
 from src.pirac.irac import IRAC
 from src.pirac.irac_batch import IRACBatch
 
-from tasks import CUAD_TASKS
+from legalbench.tasks import TASKS
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+CUDA_VISIBLE_DEVICES = "0,1,2,3,4,5,6,7"
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG testing')
@@ -49,16 +49,16 @@ def parse_args():
 
 def main():
     args = parse_args()
-    LOG_NAME = f'{args.dataset_name}-{args.model_name}-{args.use_rag}-{args.use_irac}'
+    LOG_NAME = f'retriever-{args.dataset_name}-{args.model_name}-{args.use_rag}-{args.use_irac}'
     logging_level = logging.DEBUG if args.debug else logging.INFO
 
     os.makedirs(f'log', exist_ok=True)
 
     logging.basicConfig(
-        # level=logging_level,
+        level=logging_level,
         format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
         handlers=[logging.FileHandler(f"log/{LOG_NAME}.log", encoding="utf-8"), logging.StreamHandler()],
-        # force=True
+        force=True
     )
 
     logger = logging.getLogger(__name__)
@@ -71,15 +71,17 @@ def main():
 
     # Load data
     if args.dataset_name == "legalbench":
-        tasks = ["cuad_affiliate_license-licensee", "cuad_no-solicit_of_employees", "cuad_price_restrictions", "cuad_warranty_duration"]
-        split = "test"
+        tasks = TASKS
+        split = "train"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
     else:
         pass
 
     if args.use_rag:
-        json_files = ["corpus/state_code.jsonl", "corpus/uscode.jsonl"]
+        json_files = ["corpus/state_code.jsonl", "corpus/uscode.jsonl", "corpus/canadian_decisions.jsonl", "corpus/cc_casebooks.jsonl",
+                      "corpus/cfr.jsonl", "corpus/courtlisteneropinons_sampled.jsonl", "corpus/echr.jsonl", "corpus/eurlex.jsonl",
+                      "corpus/taxrulings.jsonl"]
         faiss_index, retrieval_documents, model = setup_faiss_index(json_files)
 
     # Create LLM

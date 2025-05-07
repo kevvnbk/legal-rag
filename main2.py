@@ -13,13 +13,11 @@ from src.pirac.irac import IRAC#, PIRAC
 from src.pirac.irac_batch import IRACBatch
 
 from tasks import CUAD_TASKS
-from legalbench.tasks import INTERPRETATION_TASKS
+from legalbench.tasks import TASKS
 
 import random
 import torch
 import numpy as np  # 향후 사용 대비
-
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2"
 
 # 랜덤 시드 고정
 def set_seed(seed: int = 42):
@@ -72,7 +70,7 @@ def main():
     device = 'cuda' if torch.cuda.is_available() else "cpu"
     
     if args.dataset_name == "legalbench":
-        tasks = INTERPRETATION_TASKS
+        tasks = TASKS
         split = "test"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
@@ -81,7 +79,9 @@ def main():
         pass
 
     if args.use_rag:
-        json_files = ["corpus/state_code.jsonl", "corpus/uscode.jsonl"]
+        json_files = ["corpus/state_code.jsonl", "corpus/uscode.jsonl", "corpus/canadian_decisions.jsonl", "corpus/cc_casebooks.jsonl",
+                      "corpus/cfr.jsonl", "corpus/courtlisteneropinions_sampled.jsonl", "corpus/echr.jsonl", "corpus/eurlex.jsonl",
+                      "corpus/taxrulings.jsonl"]
         faiss_index, retrieval_documents, retriever_model = setup_faiss_index(json_files)
 
     # Create LLM

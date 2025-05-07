@@ -74,8 +74,6 @@ def build_faiss_index(documents, model_name="all-MiniLM-L6-v2", nlist=100, batch
     model = SentenceTransformer(model_name)
 
     texts = [doc.page_content for doc in documents]
-
-    texts = [doc.page_content for doc in documents]
     
     # Compute embeddings in batches
     all_embeddings = []
@@ -95,7 +93,7 @@ def build_faiss_index(documents, model_name="all-MiniLM-L6-v2", nlist=100, batch
     # Add embeddings in batches and show progress
     for i in tqdm(range(0, embeddings.shape[0], batch_size), desc="Adding embeddings to index"):
         index.add(embeddings[i:i+batch_size])
-    
+
     return index, model
 
 def retrieve(query, faiss_index, documents, model, top_k):
