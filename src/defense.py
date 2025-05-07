@@ -240,3 +240,76 @@ class MajorityVoting2(RRAG):
                     certificate = delta > 2 * corruption_size
 
             return final_pred, certificate
+        
+class MajorityVoting3(RRAG):
+    def query(self, retrieved_docs, prompt, corruption_size, irac=None):
+        separate_responses = []
+        
+        if irac:
+            for doc in retrieved_docs:
+                irac_outputs = irac.run(query=prompt , docs=doc)
+                response = irac_outputs
+                logger.info(f"Response: {response}")
+                separate_responses.append(response)
+
+            # 2) 각 response를 그대로 예측 레이블로 사용
+            preds = [resp.strip() for resp in separate_responses]
+            logger.debug(f"Separate responses: {preds}")
+
+            # 3) 다수결 투표
+            cntr = Counter(preds)
+            if not cntr:
+                final_pred, certificate = "no", False
+            else:
+                common = cntr.most_common(2)
+                final_pred = common[0][0]
+                if len(common) == 1:
+                    delta = common[0][1]
+                else:
+                    delta = common[0][1] - common[1][1]
+
+                # 4) certificate 계산 (기존 로직 유지)
+                if INJECTION:
+                    delta -= sum(1 for x in preds[-corruption_size:] if x == final_pred)
+                    certificate = delta > corruption_size
+                else:
+                    certificate = delta > 2 * corruption_size
+
+            return final_pred, certificate
+
+        else: 
+            for doc in retrieved_docs:
+                sample_docs = doc
+                combined_prompt = f"Context:\n{sample_docs}\n\nQuery:\n{prompt}"
+                
+                # LLM에 한 번 요청하고, 결과를 리스트에 저장
+                response = self.llm.query(combined_prompt)
+                logger.info(f"Response: {response}")
+                separate_responses.append(response)
+
+            # 2) 각 response를 그대로 예측 레이블로 사용
+            preds = [resp.strip() for resp in separate_responses]
+            logger.debug(f"Separate responses: {preds}")
+
+            # 3) 다수결 투표
+            cntr = Counter(preds)
+            if not cntr:
+                final_pred, certificate = "no", False
+            else:
+                common = cntr.most_common(2)
+                final_pred = common[0][0]
+                if len(common) == 1:
+                    delta = common[0][1]
+                else:
+                    delta = common[0][1] - common[1][1]
+
+                # 4) certificate 계산 (기존 로직 유지)
+                if INJECTION:
+                    delta -= sum(1 for x in preds[-corruption_size:] if x == final_pred)
+                    certificate = delta > corruption_size
+                else:
+                    certificate = delta > 2 * corruption_size
+
+            return final_pred, certificate
+        
+        
