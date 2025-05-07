@@ -70,7 +70,8 @@ def main():
     device = 'cuda' if torch.cuda.is_available() else "cpu"
     
     if args.dataset_name == "legalbench":
-        tasks = TASKS
+        #tasks = ["cuad_affiliate_license-licensee", "cuad_no-solicit_of_employees", "cuad_price_restrictions", "cuad_warranty_duration"]
+        tasks = ["cuad_price_restrictions", "cuad_warranty_duration"]
         split = "test"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
