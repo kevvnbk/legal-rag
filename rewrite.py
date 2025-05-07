@@ -3,8 +3,8 @@ import json
 import re
 
 
-input_dir = "results/legalbench-deepseek-r1-1.5b-none-voting-s3-r3-k10"
-output_dir = "results/re_legalbench-deepseek-r1-1.5b-none-voting-s3-r3-k10"
+input_dir = "results/legalbench-llama7b-none-voting-PIRAC-s1-r1-k1"
+output_dir = "results/re_legalbench-llama7b-none-voting-PIRAC-s1-r1-k1"
 os.makedirs(output_dir, exist_ok=True)
 
 # response 필드 정제 함수

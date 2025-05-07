@@ -1,0 +1,18 @@
+[
+  {
+    "task": "cuad_affiliate_license-licensee",
+    "score": 0.5151515151515151
+  },
+  {
+    "task": "cuad_no-solicit_of_employees",
+    "score": 0.5211267605633803
+  },
+  {
+    "task": "cuad_price_restrictions",
+    "score": 0.5869565217391304
+  },
+  {
+    "task": "cuad_warranty_duration",
+    "score": 0.55625
+  }
+]

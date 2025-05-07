@@ -167,13 +167,13 @@ class IRACBatch:
         )
 
         raw = self._single_turn_completion(prompt).strip()
-        # first = raw.split()[0].strip().lower()
-        # if first.startswith("y"):
-        #     return "Yes"
-        # if first.startswith("n"):
-        #     return "No"
-        # # Fallback: return the raw response if it's already just 'Yes'/'No'
-        return raw
+        first = raw.split()[0].strip().lower()
+        if first.startswith("y"):
+            return "Yes"
+        if first.startswith("n"):
+            return "No"
+        # Fallback: return "Unknown" if neither is found
+        return "Unknown"
 
 
     def _single_turn_completion(self, prompt: str) -> str:

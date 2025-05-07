@@ -45,7 +45,7 @@ def parse_args():
     parser.add_argument('--defense', type=str, default='voting', choices=['none', 'voting'], help='defense method to use')
 
     # RAG settings
-    parser.add_argument('--top_k', type=int, nargs='+', default=[10, 1], help='Top K documents for retrieval')  # 제일 처음 retriveve할 document의 수
+    parser.add_argument('--top_k', type=int, nargs='+', default=[3], help='Top K documents for retrieval')  # 제일 처음 retriveve할 document의 수
     parser.add_argument('--use_rag', action='store_true', help='Enable RAG')
 
     # PIRAC or IRAC settings
@@ -54,8 +54,8 @@ def parse_args():
     parser.add_argument('--use_irac', action='store_true', help='Enable IRAC')
     
     # Random sampling settings
-    parser.add_argument('--sample_size_values', type=int, nargs='+', default=[3, 1])    # k개 뽑은 document에서 random으로 선택할 document의 수
-    parser.add_argument('--num_rounds_values', type=int, nargs='+', default=[3, 1])     # majority voting에 참여할 투포자의 수
+    parser.add_argument('--sample_size_values', type=int, nargs='+', default=[3])    # k개 뽑은 document에서 random으로 선택할 document의 수
+    parser.add_argument('--num_rounds_values', type=int, nargs='+', default=[3])     # majority voting에 참여할 투포자의 수
 
     # other
     parser.add_argument('--debug', action='store_true', help='debug mode')
@@ -194,7 +194,7 @@ def main():
                                         corruption_size=args.corruption_size,
                                         sample_size=sample_size,
                                         num_rounds=num_rounds,
-                                        pirac=pirac
+                                        pirac=irac
                                     )
                                 else:
                                     #context = "\n".join([f"Document {i+1}: {doc}" for i, (_,doc,_) in enumerate(retrieved_docs)])
