@@ -44,8 +44,8 @@ def parse_args():
     parser.add_argument('--defense', type=str, default='voting', choices=['none', 'voting'], help='defense method to use')
 
     # RAG settings
-    parser.add_argument('--top_k', type=int, nargs='+', default=[2], help='Top K documents for retrieval')  # 제일 처음 retriveve할 document의 수
-    parser.add_argument('--use_rag', action='store_true', help='Enable RAG')
+    parser.add_argument('--top_k', type=int, nargs='+', default=[3], help='Top K documents for retrieval')  # 제일 처음 retriveve할 document의 수
+    parser.add_argument('--use_rag', default=True, action='store_true', help='Enable RAG')
 
     # IRAC settings
     parser.add_argument('--use_irac', default=True, action='store_true', help='Enable IRAC')
@@ -58,7 +58,8 @@ def parse_args():
 def main():
     set_seed(42)  # 💡 여기서 시드 고정
     args = parse_args()
-    logging_level = logging.DEBUG if args.debug else logging.INFO
+    #logging_level = logging.DEBUG if args.debug else logging.INFO
+    logging_level = logging.INFO
 
     device = 'cuda' if torch.cuda.is_available() else "cpu"
     
@@ -126,24 +127,25 @@ def main():
 
         for task_name, df in dataset.items():
             logger.info(f"Processing task: {task_name}, {len(df)} records")
+            labels = sorted(set(df["answer"]))
             
             prompts = data_tool.create_prompts(task_name, df)
             response_list = []
             for prompt in tqdm(prompts, desc=f"Processing {task_name}", unit="query"):
                 if args.use_rag:
-                    logger.debug(f"Retrieving documents for query: {prompt}")
+                    logger.info(f"Retrieving documents for query: {prompt}")
                     retrieved_docs = retrieve(prompt, faiss_index, retrieval_documents, retriever_model, top_k=top_k)
                         
                     if args.use_irac:
-                        logger.debug(f"Using IRAC_Batch")
-                        
+                        logger.info(f"Using IRAC_Batch")
                         if not no_attack:
                             retrieved_docs = attacker.attack(retrieved_docs, task_name)
 
                         if not no_defense:
                             resp, cert = defended_llm.query(
-                                retrieved_docs,
-                                prompt,
+                                retrieved_docs = retrieved_docs,
+                                prompt = prompt,
+                                labels= labels,
                                 corruption_size=args.corruption_size,
                                 irac=irac
                             )
@@ -166,7 +168,8 @@ def main():
                             
                         rag_prompt = (
                                 "You are a legal reasoning assistant. Using the legal materials below, "
-                                "answer the question with one word, either 'Yes' or 'No'.\n"
+                                # "answer the question with one word, either 'Yes' or 'No'.\n"
+                                f"Answer with exactly one of the following options: {', '.join(labels)}."
                                 "Query:\n"
                                 f"{prompt}\n\n"
                                 "Legal Materials:\n"

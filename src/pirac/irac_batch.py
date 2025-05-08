@@ -8,6 +8,8 @@ import logging
 import torch
 from typing import Dict, List, Tuple
 
+from src.defense import extract_label
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,10 +52,13 @@ class IRACBatch:
         docs: List[str] | None = None,
         top_p: float = 0.9,
         max_new_tokens: int = 512,
-    ) -> Dict[str, str]:
+        labels: list[str] | None = None,
+    ) -> str:
         """
-        Returns a dict with keys Issue, Rule, Application, Conclusion.
+        Returns a label from the provided labels list based on IRAC analysis.
         """
+        if labels is None:
+            labels = ["Yes", "No"]
 
         context = " ".join(map(str, docs)) if docs else query
 
@@ -70,10 +75,19 @@ class IRACBatch:
                 query=query,
             )
 
-        # 3. Final yes/no classification ---------------------------------------
-        response = self._classify_yes_no(query, parts)
-
-        return response
+        # 3. Classification among provided labels
+        irac_text = "\n".join(f"{k.upper()}: {v}" for k, v in parts.items())
+        prompt = (
+            f"Question: {query}\n"
+            f"Context: {irac_text}\n"
+            f"You are a legal reasoning assistant. Given the IRAC analysis below, "
+            f"answer with exactly one of the following options: {', '.join(labels)}. No explanation.\n"
+            "Do not include any explanation—answer with exactly just one label.\n"
+            "Answer:"
+        )
+        raw = self._single_turn_completion(prompt).strip()
+        label = extract_label(raw, labels)
+        return label
 
     # ╭──────────────────────────────────────────────────────────────────────╮
     # │ Internal helpers                                                    │
@@ -83,13 +97,13 @@ class IRACBatch:
     ) -> str:
         """Prompt the LLM for a full IRAC answer in one go."""
         prompt = (
-            "You are a legal reasoning assistant. Using the IRAC format, write each "
+            "You are a legal reasoning assistant. Using the IRAC(Issue, Rule, Application, Conclusion) format, write each "
             "section on its own line starting with the section name in ALL CAPS "
             "followed by a colon. Example:\n"
             "ISSUE: ...\nRULE: ...\nAPPLICATION: ...\nCONCLUSION: ...\n\n"
             f"Query: {query}\n"
             f"Context: {context}\n\n"
-            "Begin your IRAC response:\n"
+            "Begin your IRAC response with </think>:\n"
         )
 
         input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.device)
@@ -131,7 +145,7 @@ class IRACBatch:
         attempt = 0
         while True:
             neutral_prob = self._check_entailment(premise, text)
-            logger.info(
+            logger.debug(
                 f"{section_name} | attempt {attempt} | neutral:{neutral_prob:.3f}"
             )
             if neutral_prob >= 0.85:
@@ -143,7 +157,7 @@ class IRACBatch:
             # Ask LLM to rewrite only the problematic section
             fix_prompt = (
                 f"The following {section_name} is not sufficiently entailed by the "
-                f"context. Please rewrite it so that it logically follows. "
+                f"context. Please rewrite it so that it logically follows with </think>. "
                 f"Context: {premise}\n"
                 f"Original {section_name}: {text}\n"
                 f"Rewritten {section_name}:"
@@ -151,30 +165,6 @@ class IRACBatch:
 
             text = self._single_turn_completion(fix_prompt).strip()
             attempt += 1
-
-    def _classify_yes_no(self, query: str, irac_parts: Dict[str, str]) -> str:
-        """
-        Given the original query and a fully repaired IRAC breakdown,
-        ask the LLM for a single‑word binary answer: "Yes" or "No".
-        """
-        irac_text = "\n".join(f"{k.upper()}: {v}" for k, v in irac_parts.items())
-        prompt = (
-            "You are a legal reasoning assistant. Using the IRAC analysis below, "
-            "answer the question with one word, either 'Yes' or 'No'.\n"
-            f"Question: {query}\n"
-            f"{irac_text}\n"
-            "Answer (Yes or No):"
-        )
-
-        raw = self._single_turn_completion(prompt).strip()
-        first = raw.split()[0].strip().lower()
-        if first.startswith("y"):
-            return "Yes"
-        if first.startswith("n"):
-            return "No"
-        # Fallback: return "Unknown" if neither is found
-        return "Unknown"
-
 
     def _single_turn_completion(self, prompt: str) -> str:
         """Utility for short completions without extra parsing."""
