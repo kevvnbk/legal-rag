@@ -56,7 +56,7 @@ class BaseModel:
         Keep only the portion that follows the closing </think> tag,
         then run the other clean‑ups you already defined.
         """
-        close_tag = "[/INST]"
+        close_tag = "</think>"
         idx = response.find(close_tag)
         if idx != -1:
             response = response[idx + len(close_tag):]   # text *after* </think>

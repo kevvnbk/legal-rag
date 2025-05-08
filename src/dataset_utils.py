@@ -29,6 +29,46 @@ class DataUtils:
                 logger.warning("No data was loaded.")
         return self.data
 
+class BarExam(DataUtils):
+    def __init__(self, dataset_name, split=None):
+        super().__init__(dataset_name)
+        self.split = split
+
+        logger.info(f'Initializing dataset: {dataset_name}')
+
+    def _load_data(self):
+        """
+        Load dataset from BarExam.
+
+        :return: Loaded dataset as a Pandas DataFrame.
+        """
+        try:
+            dataset = load_dataset("reglab/barexam_qa", name="qa")
+            return dataset[self.split].to_pandas()
+        except Exception as e:
+            logger.error(f"Error loading dataset: {e}")
+            return None
+        
+    def create_prompt(self, row):
+        """
+        Generate prompts from a prompt template and data.
+        
+        :param data_df: Data to use for generating prompts.
+
+        :return: List of prompts generated from the template and data.
+        """
+
+        prompt = (
+            f"{row['prompt']}\n"
+            f"{row['question']}\n\n"
+            f"A) {row['choice_a']}\n"
+            f"B) {row['choice_b']}\n"
+            f"C) {row['choice_c']}\n"
+            f"D) {row['choice_d']}\n\n"
+        )
+
+        return prompt
+
 class LegalBench(DataUtils):
     def __init__(self, dataset_name, tasks=None, split=None):
         """
@@ -61,7 +101,7 @@ class LegalBench(DataUtils):
         :return: Loaded dataset as a Pandas DataFrame.
         """
         try: 
-            dataset = load_dataset("nguha/legalbench", task)
+            dataset = load_dataset("hoorangyee/legalbench_tiny", task)
             return dataset[self.split].to_pandas()
         except Exception as e:
             logger.error(f"Error loading dataset for task {task}: {e}")
@@ -127,3 +167,5 @@ def load_data(dataset_name, tasks=None, split=None):
     """
     if dataset_name == 'legalbench':
         return LegalBench(dataset_name, tasks=tasks, split=split)
+    elif dataset_name == 'barexam':
+        return BarExam(dataset_name, split=split)
