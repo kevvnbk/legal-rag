@@ -29,6 +29,45 @@ class DataUtils:
                 logger.warning("No data was loaded.")
         return self.data
 
+class KBL(DataUtils):
+    def __init__(self, dataset_name, split=None):
+        super().__init__(dataset_name)
+        self.split = split
+
+        logger.info(f'Initializing dataset: {dataset_name}')
+    
+    def _load_data(self):
+        """
+        Load dataset from KBL.
+
+        :return: Loaded dataset as a Pandas DataFrame.
+        """
+        try:
+            dataset = load_dataset("lbox/kbl", name="bar_exam")
+            return dataset[self.split].to_pandas()
+        except Exception as e:
+            logger.error(f"Error loading dataset: {e}")
+            return None
+        
+    def create_prompt(self, row):
+        """
+        Generate prompts from a prompt template and data.
+        
+        :param data_df: Data to use for generating prompts.
+
+        :return: List of prompts generated from the template and data.
+        """
+
+        prompt = (
+            f"{row['question']}\n\n"
+            f"A) {row['A']}\n"
+            f"B) {row['B']}\n"
+            f"C) {row['C']}\n"
+            f"D) {row['D']}\n\n"
+        )
+
+        return prompt
+
 class BarExam(DataUtils):
     def __init__(self, dataset_name, split=None):
         super().__init__(dataset_name)
@@ -169,3 +208,5 @@ def load_data(dataset_name, tasks=None, split=None):
         return LegalBench(dataset_name, tasks=tasks, split=split)
     elif dataset_name == 'barexam':
         return BarExam(dataset_name, split=split)
+    elif dataset_name == 'kbl':
+        return KBL(dataset_name, split=split)

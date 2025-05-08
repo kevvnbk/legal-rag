@@ -6,7 +6,7 @@ from src.model import create_model
 from src.evaluation import evaluate
 from src import dataset_utils
 
-from src.retriever.retriever import retrieve, setup_faiss_index, clean_document
+from src.retriever.retriever import retrieve, setup_faiss_index
 from src.defense import MajorityVoting3
 from src.pirac.irac import IRAC#, PIRAC
 from src.pirac.irac_batch import IRACBatch
@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument('--defense', type=str, default='none', choices=['none', 'voting'], help='defense method to use')
 
     # RAG settings
-    parser.add_argument('--top_k', type=int, nargs='+', default=[2], help='Top K documents for retrieval')  # 제일 처음 retriveve할 document의 수
+    parser.add_argument('--top_k', type=int, nargs='+', default=[3], help='Top K documents for retrieval')  # 제일 처음 retriveve할 document의 수
     parser.add_argument('--use_rag', action='store_true', help='Enable RAG')
 
     # IRAC settings
@@ -54,8 +54,32 @@ def main():
     set_seed(42)  # 💡 여기서 시드 고정
     args = parse_args()
     logging_level = logging.DEBUG if args.debug else logging.INFO
+    top_k = 3
 
     device = 'cuda' if torch.cuda.is_available() else "cpu"
+
+    if args.use_irac:
+        LOG_NAME = f"{args.dataset_name}-{args.model_name}-{args.defense}-IRAC-k{top_k}"
+    else:
+        LOG_NAME = f"{args.dataset_name}-{args.model_name}-{args.defense}-k{top_k}"
+    os.makedirs("log", exist_ok=True)
+
+    root_logger = logging.getLogger()
+    if root_logger.hasHandlers():
+        root_logger.handlers.clear()
+    logging.basicConfig(
+        # level=logging_level,
+        format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+        handlers=[logging.FileHandler(f"log/{LOG_NAME}.log"), logging.StreamHandler()],
+        # force=True
+    )
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging_level)
+    logger.info(f"Full argument: {args}")
+    logger.info(f"Using device: {device}")
+    logger.info(f"Run start: top_k={top_k}")
+
+    os.makedirs(f"results/{LOG_NAME}", exist_ok=True)
 
     if args.dataset_name == "barexam":
         split = "test"
@@ -86,30 +110,9 @@ def main():
         top_k = 3
         no_defense = args.defense == 'none' or top_k <= 0
 
-        if args.use_irac:
-            LOG_NAME = f"{args.dataset_name}-{args.model_name}-{args.defense}-IRAC-k{top_k}"
-        else:
-            LOG_NAME = f"{args.dataset_name}-{args.model_name}-{args.defense}-k{top_k}"
-        os.makedirs("log", exist_ok=True)
-
-        root_logger = logging.getLogger()
-        if root_logger.hasHandlers():
-            root_logger.handlers.clear()
-        logging.basicConfig(
-            format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-            handlers=[logging.FileHandler(f"log/{LOG_NAME}.log"), logging.StreamHandler()],
-        )
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging_level)
-        logger.info(f"Full argument: {args}")
-        logger.info(f"Using device: {device}")
-        logger.info(f"Run start: top_k={top_k}")
-
-        os.makedirs(f"results/{LOG_NAME}", exist_ok=True)
-
+        response_list = []
         for _, row in tqdm(dataset.iterrows(), desc="Processing dataset", unit="row"):    
             prompt = data_tool.create_prompt(row)
-            response_list = []
             if args.use_rag:
                 logger.debug(f"Retrieving documents for query: {prompt}")
                 retrieved_docs = retrieve(prompt, faiss_index, retrieval_documents, retriever_model, top_k=top_k)
@@ -133,7 +136,7 @@ def main():
                     
                 # Not Using IRAC
                 else:
-                    context = "\n".join([f"Document {i+1}: {clean_document(doc)}" for i, (_, doc, _) in enumerate(retrieved_docs)])
+                    context = "\n".join([f"Document {i+1}: {doc}" for i, (doc, _) in enumerate(retrieved_docs)])
                         
                     rag_prompt = (
                             "You are a legal reasoning assistant. Using the legal materials below, "
@@ -142,7 +145,7 @@ def main():
                             "Query:\n"
                             f"{prompt}\n\n"
                             "Legal Materials:\n"
-                            f"\"{context}\"\n\n"
+                            f"{context}\n\n"
                     )
                     
                     logger.debug(f"RAG prompt:\n{rag_prompt}")
@@ -162,7 +165,8 @@ def main():
                     
             else:
                 new_prompt = (
-                    "You are a legal reasoning assistant. Answer the query."
+                    "You are a legal reasoning assistant. Select the correct answer (A/B/C/D).\n"
+                    "Start your response with </think>\n"
                     f"{prompt}\n"
                 )
                 resp = llm.query(new_prompt)
@@ -171,7 +175,7 @@ def main():
                 response_list.append({"query": prompt, "response": resp, "certificate": cert})
                 logger.info(f"Response: {resp}")
 
-        with open(f"results/{LOG_NAME}.json", "w") as f:
+        with open(f"results/{LOG_NAME}/answers.json", "w") as f:
             json.dump(response_list, f, indent=2)
 
         predictions = [entry["response"] for entry in response_list]
