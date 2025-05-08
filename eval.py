@@ -36,5 +36,5 @@ def evaluate_saved_results(results_dir, dataset_name="legalbench"):
 # 예시 실행
 if __name__ == "__main__":
     # 측정하고 싶은 결과 폴더 이름만 바꾸면 됨
-    LOG_NAME = "re_legalbench-llama7b-none-voting-PIRAC-s1-r1-k1"
+    LOG_NAME = "legalbench-deepseek-r1-1.5b-none-voting-IRAC-k2"
     evaluate_saved_results(results_dir=f"results/{LOG_NAME}")
