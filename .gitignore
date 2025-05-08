@@ -1,4 +1,6 @@
 *__pycache__
-result
+results
 log
 legalbench
+faiss_data
+test.ipynb
