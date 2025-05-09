@@ -102,7 +102,7 @@ def retrieve(query, faiss_index, documents, model, top_k):
     results = []
     for i, idx in enumerate(indices[0]):
         doc = documents[idx]
-        results.append((doc, float(distances[0][i])))
+        results.append((doc.page_content, float(distances[0][i])))
     return results
 
 def download_cuad_dataset(retrieval_dataset):

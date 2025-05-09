@@ -12,7 +12,7 @@ from src.attack import PIA, Poison
 from src.pirac.irac import IRAC#, PIRAC
 from src.pirac.irac_batch import IRACBatch
 
-from tasks import CUAD_TASKS
+from legalbench.tasks import TASKS
 
 import random
 import torch
@@ -64,7 +64,7 @@ def main():
     
     if args.dataset_name == "legalbench":
         #tasks = ["cuad_affiliate_license-licensee", "cuad_no-solicit_of_employees", "cuad_price_restrictions", "cuad_warranty_duration"]
-        tasks = ["cuad_price_restrictions", "cuad_warranty_duration"]
+        tasks = TASKS
         split = "test"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
@@ -73,7 +73,10 @@ def main():
         pass
 
     if args.use_rag:
-        faiss_index, retrieval_documents, retriever_model = setup_faiss_index("theatticusproject/cuad-qa")
+        json_files = ["corpus/state_code.jsonl", "corpus/uscode.jsonl", "corpus/canadian_decisions.jsonl", "corpus/cc_casebooks.jsonl",
+                      "corpus/cfr.jsonl", "corpus/courtlisteneropinions_sampled.jsonl", "corpus/echr.jsonl", "corpus/eurlex.jsonl",
+                      "corpus/taxrulings.jsonl"]
+        faiss_index, retrieval_documents, retriever_model = setup_faiss_index(json_files)
 
     # Create LLM
     llm = create_model(args.model_name)
