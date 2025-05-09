@@ -87,6 +87,7 @@ class MajorityVoting3(RRAG):
 
             return final_pred, certificate
 
+        # Not using IRAC
         else: 
             for doc in retrieved_docs:
                 sample_docs = doc

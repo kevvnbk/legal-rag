@@ -45,10 +45,10 @@ def parse_args():
 
     # RAG settings
     parser.add_argument('--top_k', type=int, nargs='+', default=[3], help='Top K documents for retrieval')  # 제일 처음 retriveve할 document의 수
-    parser.add_argument('--use_rag', default=True, action='store_true', help='Enable RAG')
+    parser.add_argument('--use_rag', action='store_true', help='Enable RAG')
 
     # IRAC settings
-    parser.add_argument('--use_irac', default=True, action='store_true', help='Enable IRAC')
+    parser.add_argument('--use_irac', action='store_true', help='Enable IRAC')
 
     # other
     parser.add_argument('--debug', action='store_true', help='debug mode')
@@ -58,8 +58,7 @@ def parse_args():
 def main():
     set_seed(42)  # 💡 여기서 시드 고정
     args = parse_args()
-    #logging_level = logging.DEBUG if args.debug else logging.INFO
-    logging_level = logging.INFO
+    logging_level = logging.DEBUG if args.debug else logging.INFO
 
     device = 'cuda' if torch.cuda.is_available() else "cpu"
     
@@ -113,7 +112,7 @@ def main():
         if root_logger.hasHandlers():
             root_logger.handlers.clear()
         logging.basicConfig(
-            format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+            format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
             handlers=[logging.FileHandler(f"log/{LOG_NAME}.log"), logging.StreamHandler()],
         )
         logger = logging.getLogger(__name__)
@@ -135,13 +134,14 @@ def main():
                 if args.use_rag:
                     logger.info(f"Retrieving documents for query: {prompt}")
                     retrieved_docs = retrieve(prompt, faiss_index, retrieval_documents, retriever_model, top_k=top_k)
-                        
+                    
                     if args.use_irac:
                         logger.info(f"Using IRAC_Batch")
                         if not no_attack:
                             retrieved_docs = attacker.attack(retrieved_docs, task_name)
 
                         if not no_defense:
+                            logger.info(f"Using Majority Voting")
                             resp, cert = defended_llm.query(
                                 retrieved_docs = retrieved_docs,
                                 prompt = prompt,
@@ -158,52 +158,51 @@ def main():
                         
                     # Not Using IRAC
                     else:
+                        logger.debug(f"Not using IRAC_Batch")
+                        
                         if not no_attack:
                             logger.debug(f"Attacking prompt...")
-                            retrieved_docs = attacker.attack(retrieved_docs, task_name)
-                            context = "\n".join([f"Document {i+1}: {doc}" for i, doc in enumerate(retrieved_docs)])
-                            logger.debug(f"Attacked prompt")
-                        else:
-                            context = "\n".join([f"Document {i+1}: {clean_document(doc)}" for i, (_, doc, _) in enumerate(retrieved_docs)])
                             
-                        rag_prompt = (
-                                "You are a legal reasoning assistant. Using the legal materials below, "
-                                # "answer the question with one word, either 'Yes' or 'No'.\n"
-                                f"Answer with exactly one of the following options: {', '.join(labels)}."
-                                "Query:\n"
-                                f"{prompt}\n\n"
-                                "Legal Materials:\n"
-                                f"\"{context}\"\n\n"
-                                "Answer (Yes or No):"
-                        )
-                        
-                        logger.debug(f"RAG prompt:\n{rag_prompt}")
-
+                        # MV3
                         if not no_defense:
                             resp, cert = defended_llm.query(
-                                retrieved_docs,
-                                prompt,
+                                retrieved_docs = retrieved_docs,
+                                prompt = prompt,
+                                labels= labels,
                                 corruption_size=args.corruption_size,
                             )
                         else:
-                            #context = "\n".join([f"Document {i+1}: {doc}" for i, (_,doc,_) in enumerate(retrieved_docs)])
-                            #rag_prompt = f"Context:\n{context}\n\nQuery:\n{prompt}"
+                            rag_prompt = (
+                                    "You are a legal reasoning assistant. Using the legal materials below, "
+                                    f"Answer with exactly one of the following options: {', '.join(labels)}."
+                                    "Query:\n"
+                                    f"{prompt}\n\n"
+                                    "Legal Materials:\n"
+                                    f"\"{retrieved_docs}\"\n\n"
+                                    f"Answer ({' or '.join(labels)}):"
+                            )
+                            logger.debug(f"RAG prompt:\n{rag_prompt}")
                             resp, cert = llm.query(rag_prompt), None
 
                         response_list.append({"query": prompt, "response": resp, "certificate": cert})
-                        
+                        logger.info(f"Response: {resp}")
+                 
+                # Not using RAG
+                # if LLM don't use RAG, then not use MV.       
                 else:
                     new_prompt = (
-                        "You are a legal reasoning assistant. Answer the question with one word, either 'Yes' or 'No'."
+                        "You are a legal reasoning assistant."
+                        f"Answer with exactly one of the following options: {', '.join(labels)}."
                         f"{prompt}\n"
-                        "Answer (Yes or No):"
+                        f"Answer ({', '.join(labels)}):"
+                        "Just answer only your answer! Do not attach 'Answer:'"
                     )
                     resp = llm.query(new_prompt)
                     cert = None
-                
+                    logger.info(f"Response: {resp}")
+                    
                     response_list.append({"query": prompt, "response": resp, "certificate": cert})
-                logger.info(f"Response: {resp}")
-
+                
             with open(f"results/{LOG_NAME}/{task_name}.json", "w") as f:
                 json.dump(response_list, f, indent=2)
 
