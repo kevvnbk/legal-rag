@@ -56,7 +56,10 @@ class BaseModel:
         Keep only the portion that follows the closing </think> tag,
         then run the other clean‑ups you already defined.
         """
-        close_tag = "</think>"
+        if self.model_name == "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B":
+            close_tag = "</think>"
+        elif self.model_name == "Equall/Saul-7B-Instruct-v1":
+            close_tag = "[/INST']"
         idx = response.find(close_tag)
         if idx != -1:
             response = response[idx + len(close_tag):]   # text *after* </think>
@@ -77,7 +80,7 @@ class HFModel(BaseModel):
         self.max_output_tokens = MAX_NEW_TOKENS if max_output_tokens is None else max_output_tokens
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, force_download=True)
         default_kw = dict(
-            torch_dtype=torch.bfloat16,
+            torch_dtype=torch.float16,
             device_map="auto",
             low_cpu_mem_usage=True,
             trust_remote_code=True,

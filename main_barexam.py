@@ -54,9 +54,10 @@ def main():
     set_seed(42)  # 💡 여기서 시드 고정
     args = parse_args()
     logging_level = logging.DEBUG if args.debug else logging.INFO
-    top_k = 3
 
     device = 'cuda' if torch.cuda.is_available() else "cpu"
+
+    top_k = 3
 
     if args.use_irac:
         LOG_NAME = f"{args.dataset_name}-{args.model_name}-{args.defense}-IRAC-k{top_k}"
@@ -107,23 +108,25 @@ def main():
 
     # ─── 스윕 루프 ───
     for top_k in args.top_k:
-        top_k = 3
+        no_defense = args.defense == 'none' or top_k <= 0
         no_defense = args.defense == 'none' or top_k <= 0
 
         response_list = []
+        labels = dataset["answer"].unique().tolist()
         for _, row in tqdm(dataset.iterrows(), desc="Processing dataset", unit="row"):    
             prompt = data_tool.create_prompt(row)
             if args.use_rag:
-                logger.debug(f"Retrieving documents for query: {prompt}")
+                logger.info(f"Retrieving documents for query: {prompt}")
                 retrieved_docs = retrieve(prompt, faiss_index, retrieval_documents, retriever_model, top_k=top_k)
                     
                 if args.use_irac:
-                    logger.debug(f"Using IRAC_Batch")
+                    logger.info(f"Using IRAC_Batch")
 
                     if not no_defense:
                         resp, cert = defended_llm.query(
-                            retrieved_docs,
-                            prompt,
+                            retrieved_docs = retrieved_docs,
+                            prompt = prompt,
+                            labels=labels,
                             corruption_size=args.corruption_size,
                             irac=irac
                         )
@@ -139,13 +142,13 @@ def main():
                     context = "\n".join([f"Document {i+1}: {doc}" for i, (doc, _) in enumerate(retrieved_docs)])
                         
                     rag_prompt = (
-                            "You are a legal reasoning assistant. Using the legal materials below, "
-                            "select the correct answer (A/B/C/D).\n"
-                            "Start your response with </think>\n"
-                            "Query:\n"
-                            f"{prompt}\n\n"
-                            "Legal Materials:\n"
-                            f"{context}\n\n"
+                                "You are a legal reasoning assistant. Using the legal materials below, "
+                                # "answer the question with one word, either 'Yes' or 'No'.\n"
+                                f"Answer with exactly one of the following options: {', '.join(labels)}."
+                                "Query:\n"
+                                f"{prompt}\n\n"
+                                "Legal Materials:\n"
+                                f"{context}\n\n"
                     )
                     
                     logger.debug(f"RAG prompt:\n{rag_prompt}")
@@ -165,15 +168,16 @@ def main():
                     
             else:
                 new_prompt = (
-                    "You are a legal reasoning assistant. Select the correct answer (A/B/C/D).\n"
-                    "Start your response with </think>\n"
+                    "You are a legal reasoning assistant."
+                    f"Answer with exactly one of the following options: {', '.join(labels)}."
+                    # "Start your response with </think>\n"
                     f"{prompt}\n"
                 )
                 resp = llm.query(new_prompt)
                 cert = None
             
                 response_list.append({"query": prompt, "response": resp, "certificate": cert})
-                logger.info(f"Response: {resp}")
+            logger.info(f"Response: {resp}")
 
         with open(f"results/{LOG_NAME}/answers.json", "w") as f:
             json.dump(response_list, f, indent=2)
@@ -193,8 +197,6 @@ def main():
         with open(f"results/{LOG_NAME}/eval.json", "w") as f:
             json.dump(evaluation_score, f, indent=4)
         logger.info(f"Run complete: {LOG_NAME}")
-
-        exit()
 
                 
 if __name__ == '__main__':
