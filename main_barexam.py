@@ -6,12 +6,10 @@ from src.model import create_model
 from src.evaluation import evaluate
 from src import dataset_utils
 
-from src.retriever.retriever import retrieve, setup_faiss_index
+from src.retriever.retriever import retrieve, setup_faiss_index, fetch_doc
 from src.defense import MajorityVoting3
 from src.pirac.irac import IRAC#, PIRAC
 from src.pirac.irac_batch import IRACBatch
-
-from legalbench.tasks import TASKS
 
 import random
 import torch
@@ -32,7 +30,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG hyperparam sweep & Testing')
     
     # LLM settings
-    parser.add_argument('--model_name', type=str, default='deepseek-r1-1.5b', choices=['llama7b', 'llama3.2-1b', 'llama3qa-8b', 'deepseek-r1-1.5b', 'saul7b'], help='model to use')
+    parser.add_argument('--model_name', type=str, default='deepseek-r1-1.5b', choices=['llama7b', 'llama3.2-1b', 'llama3qa-8b', 'deepseek-r1-1.5b', 'saul7b', 'llama3.1-8b'], help='model to use')
     parser.add_argument('--dataset_name', type=str, default='barexam', choices=['legalbench', 'barexam'], help='dataset to use')
 
     # Defense
@@ -69,10 +67,10 @@ def main():
     if root_logger.hasHandlers():
         root_logger.handlers.clear()
     logging.basicConfig(
-        # level=logging_level,
+        level=logging_level,
         format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
         handlers=[logging.FileHandler(f"log/{LOG_NAME}.log"), logging.StreamHandler()],
-        # force=True
+        force=True
     )
     logger = logging.getLogger(__name__)
     logger.setLevel(logging_level)
@@ -89,10 +87,9 @@ def main():
 
     if args.use_rag:
         json_files = ["corpus/state_code.jsonl", "corpus/uscode.jsonl", "corpus/canadian_decisions.jsonl", "corpus/cc_casebooks.jsonl",
-                      "corpus/cfr.jsonl", "corpus/courtlisteneropinions_sampled.jsonl", "corpus/echr.jsonl", "corpus/eurlex.jsonl",
+                      "corpus/cfr.jsonl", "corpus/courtlisteneropinons_sampled.jsonl", "corpus/echr.jsonl", "corpus/eurlex.jsonl",
                       "corpus/taxrulings.jsonl"]
-        faiss_index, retrieval_documents, retriever_model = setup_faiss_index(json_files)
-
+        faiss_index, offsets, retriever_model = setup_faiss_index(json_files)
     # Create LLM
     llm = create_model(args.model_name)
 
@@ -117,7 +114,9 @@ def main():
             prompt = data_tool.create_prompt(row)
             if args.use_rag:
                 logger.info(f"Retrieving documents for query: {prompt}")
-                retrieved_docs = retrieve(prompt, faiss_index, retrieval_documents, retriever_model, top_k=top_k)
+                doc_ids = retrieve(prompt, faiss_index, retriever_model, top_k)
+                retrieved_docs = [fetch_doc(doc_id) for doc_id in doc_ids]
+                logger.info(f"Retrieved documents: {retrieved_docs}")
                     
                 if args.use_irac:
                     logger.info(f"Using IRAC_Batch")
@@ -142,13 +141,11 @@ def main():
                     context = "\n".join([f"Document {i+1}: {doc}" for i, (doc, _) in enumerate(retrieved_docs)])
                         
                     rag_prompt = (
-                                "You are a legal reasoning assistant. Using the legal materials below, "
-                                # "answer the question with one word, either 'Yes' or 'No'.\n"
-                                f"Answer with exactly one of the following options: {', '.join(labels)}."
-                                "Query:\n"
-                                f"{prompt}\n\n"
-                                "Legal Materials:\n"
-                                f"{context}\n\n"
+                        "Answer the following question using the provided legal materials.\n\n"
+                        "Question:\n"
+                        f"{prompt}\n\n"
+                        "Legal Materials:\n"
+                        f"{context}\n\n"
                     )
                     
                     logger.debug(f"RAG prompt:\n{rag_prompt}")
@@ -168,16 +165,17 @@ def main():
                     
             else:
                 new_prompt = (
-                    "You are a legal reasoning assistant."
-                    f"Answer with exactly one of the following options: {', '.join(labels)}."
-                    # "Start your response with </think>\n"
-                    f"{prompt}\n"
+                    # "You are a legal reasoning assistant."
+                    # f"Answer with exactly one of the following options: {', '.join(labels)}."
+                    # # "Start your response with </think>\n"
+                    f"{prompt}"
                 )
+
                 resp = llm.query(new_prompt)
                 cert = None
             
                 response_list.append({"query": prompt, "response": resp, "certificate": cert})
-            logger.info(f"Response: {resp}")
+            # logger.info(f"Response: {resp}")
 
         with open(f"results/{LOG_NAME}/answers.json", "w") as f:
             json.dump(response_list, f, indent=2)

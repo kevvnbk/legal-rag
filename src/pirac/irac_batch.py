@@ -31,8 +31,6 @@ class IRACBatch:
     ):
         # ── LLM setup ───────────────────────────────────────────────────────────
         self.llm = llm_model
-        self.tokenizer = llm_model.tokenizer
-        self.llm_model = llm_model.model
 
         # ── NLI setup ───────────────────────────────────────────────────────────
         self.nli = nli_model
@@ -50,20 +48,12 @@ class IRACBatch:
         self,
         query: str,
         docs: List[str] | None = None,
-        top_p: float = 0.9,
-        max_new_tokens: int = 512,
-        labels: list[str] | None = None,
     ) -> str:
-        """
-        Returns a label from the provided labels list based on IRAC analysis.
-        """
-        if labels is None:
-            labels = ["Yes", "No"]
 
         context = " ".join(map(str, docs)) if docs else query
 
         # 1. One-shot draft ------------------------------------------------------
-        raw_irac = self._generate_irac(query, context, top_p, max_new_tokens)
+        raw_irac = self._generate_irac(query, context)
         parts = self._split_irac(raw_irac)
 
         # 2. Entailment repair loop ---------------------------------------------
@@ -74,49 +64,35 @@ class IRACBatch:
                 initial_text=parts[section],
                 query=query,
             )
+            logger.debug(f"Final {section}: {parts[section]}")
 
         # 3. Classification among provided labels
         irac_text = "\n".join(f"{k.upper()}: {v}" for k, v in parts.items())
         prompt = (
-            f"Question: {query}\n"
+            f"Given the IRAC analysis below, answer the question."
             f"Context: {irac_text}\n"
-            f"You are a legal reasoning assistant. Given the IRAC analysis below, "
-            f"answer with exactly one of the following options: {', '.join(labels)}. No explanation.\n"
-            "Do not include any explanation—answer with exactly just one label.\n"
-            "Answer:"
+            f"Question: {query}\n"
         )
-        raw = self._single_turn_completion(prompt).strip()
-        label = extract_label(raw, labels)
-        return label
+        answer = self.llm.query(prompt)
+        return answer
 
     # ╭──────────────────────────────────────────────────────────────────────╮
     # │ Internal helpers                                                    │
     # ╰──────────────────────────────────────────────────────────────────────╯
     def _generate_irac(
-        self, query: str, context: str, top_p: float, max_new_tokens: int
+        self, query: str, context: str
     ) -> str:
         """Prompt the LLM for a full IRAC answer in one go."""
         prompt = (
-            "You are a legal reasoning assistant. Using the IRAC(Issue, Rule, Application, Conclusion) format, write each "
+            "Using the IRAC(Issue, Rule, Application, Conclusion) format, write each "
             "section on its own line starting with the section name in ALL CAPS "
             "followed by a colon. Example:\n"
             "ISSUE: ...\nRULE: ...\nAPPLICATION: ...\nCONCLUSION: ...\n\n"
             f"Query: {query}\n"
             f"Context: {context}\n\n"
-            "Begin your IRAC response with </think>:\n"
         )
 
-        input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.device)
-        output_ids = self.llm_model.generate(
-            input_ids,
-            max_new_tokens=max_new_tokens,
-            do_sample=True,
-            top_p=top_p,
-            pad_token_id=self.tokenizer.eos_token_id,
-        )
-        generated = self.tokenizer.decode(
-            output_ids[0][input_ids.shape[-1] :], skip_special_tokens=True
-        )
+        generated = self.llm.query(prompt)
         logger.debug(f"RAW_IRAC\n{generated}")
         return generated
 
@@ -130,6 +106,7 @@ class IRACBatch:
                 key, value = match.group(1).title(), match.group(2).strip()
                 if key in parts:
                     parts[key] = value
+        logger.debug(f"Parsed IRAC: {parts}")
         return parts
 
     def _ensure_entailment(
@@ -157,26 +134,14 @@ class IRACBatch:
             # Ask LLM to rewrite only the problematic section
             fix_prompt = (
                 f"The following {section_name} is not sufficiently entailed by the "
-                f"context. Please rewrite it so that it logically follows with </think>. "
+                f"context. Please rewrite it so that it logically follows the context. "
                 f"Context: {premise}\n"
                 f"Original {section_name}: {text}\n"
                 f"Rewritten {section_name}:"
             )
 
-            text = self._single_turn_completion(fix_prompt).strip()
+            text = self.llm.query(fix_prompt)
             attempt += 1
-
-    def _single_turn_completion(self, prompt: str) -> str:
-        """Utility for short completions without extra parsing."""
-        ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.device)
-        out = self.llm_model.generate(
-            ids,
-            max_new_tokens=150,
-            do_sample=True,
-            top_p=0.9,
-            pad_token_id=self.tokenizer.eos_token_id,
-        )
-        return self.tokenizer.decode(out[0][ids.shape[-1] :], skip_special_tokens=True)
 
     # ── NLI glue ───────────────────────────────────────────────────────────────
     def _check_entailment(self, premise: str, hypothesis: str) -> Tuple[str, float, float]:
