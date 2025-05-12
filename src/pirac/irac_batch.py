@@ -53,7 +53,7 @@ class IRACBatch:
         context = " ".join(map(str, docs)) if docs else query
 
         # 1. One-shot draft ------------------------------------------------------
-        raw_irac = self._generate_irac(query, context)
+        raw_irac = self._generate_irac(query, context) 
         parts = self._split_irac(raw_irac)
 
         # 2. Entailment repair loop ---------------------------------------------
@@ -69,7 +69,7 @@ class IRACBatch:
         # 3. Classification among provided labels
         irac_text = "\n".join(f"{k.upper()}: {v}" for k, v in parts.items())
         prompt = (
-            f"Given the IRAC analysis below, answer the question."
+            f"Using the IRAC analysis below, answer the question."
             f"Context: {irac_text}\n"
             f"Question: {query}\n"
         )
@@ -125,7 +125,7 @@ class IRACBatch:
             logger.debug(
                 f"{section_name} | attempt {attempt} | neutral:{neutral_prob:.3f}"
             )
-            if neutral_prob >= 0.85:
+            if neutral_prob >= 0.5:
                 return text  # success
             consecutive_failures += 1
             if consecutive_failures > 3:

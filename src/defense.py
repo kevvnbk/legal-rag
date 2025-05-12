@@ -48,7 +48,7 @@ class RRAG:
     #     return False
         
 class MajorityVoting3(RRAG):
-    def query(self, retrieved_docs, prompt, labels, corruption_size, irac=None):
+    def query(self, retrieved_docs, prompt, labels, irac=None):
         separate_responses = []
         
         if labels is None:
@@ -79,11 +79,12 @@ class MajorityVoting3(RRAG):
                     delta = common[0][1] - common[1][1]
 
                 # 4) certificate 계산 (기존 로직 유지)
-                if INJECTION:
-                    delta -= sum(1 for x in preds[-corruption_size:] if x == final_pred)
-                    certificate = delta > corruption_size
-                else:
-                    certificate = delta > 2 * corruption_size
+                certificate = False
+                # if INJECTION:
+                #     delta -= sum(1 for x in preds[-corruption_size:] if x == final_pred)
+                #     certificate = delta > corruption_size
+                # else:
+                #     certificate = delta > 2 * corruption_size
 
             return final_pred, certificate
 

@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 import gc
-from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification
+from transformers import AutoTokenizer, AutoModelForCausalLM, AutoModelForSequenceClassification, pipeline
 
+import re
 import logging
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,8 @@ def create_model(model_name, **kwargs):
     if model_name in model_mapping:
         if model_name == "deberta":
             return HFModelBERT(model_mapping[model_name], **kwargs)
+        elif model_name == "saul7b":
+            return HFModelPipeline(model_mapping[model_name], **kwargs)
         else:
             return HFModel(model_mapping[model_name], **kwargs)
     else:
@@ -46,33 +49,38 @@ class BaseModel:
 
     def _query(self, prompt):
         raise NotImplementedError
-    
-    def _clean_response(self, response):
-        for pattern in self.clean_str:
-            idx = response.find(pattern)
-            if idx != -1:
-                response = response[:idx]
-        
-        return response.strip().lstrip('\n')
 
-    # def _clean_response(self, response: str) -> str:
-    #     """
-    #     Keep only the portion that follows the closing </think> tag,
-    #     then run the other clean‑ups you already defined.
-    #     """
-    #     if self.model_name == "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B":
-    #         close_tag = "</think>"
-    #     elif self.model_name == "Equall/Saul-7B-Instruct-v1":
-    #         close_tag = "[/INST']"
-    #     idx = response.find(close_tag)
-    #     if idx != -1:
-    #         response = response[idx + len(close_tag):]  
-    #     # run your other string‑trims
-    #     # for pattern in self.clean_str:
-    #     #     cut = response.find(pattern)
-    #     #     if cut != -1:
-    #     #         response = response[:cut]
-    #     return response.lstrip()        # strip leading spaces / newlines
+    def extract_single_choice(self, response: str) -> str:
+        match = re.search(r'\b([ABCD])\b', response.strip())
+        return match.group(1) if match else None
+        
+        # def _clean_response(self, response):
+        #     for pattern in self.clean_str:
+        #         idx = response.find(pattern)
+        #         if idx != -1:
+        #             response = response[:idx]
+            
+        #     return response.strip().lstrip('\n')
+
+    def _clean_response(self, response: str) -> str:
+        """
+        Keep only the portion that follows the closing </think> tag,
+        then run the other clean‑ups you already defined.
+        """
+        # if self.model_name == "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B":
+        #     close_tag = "</think>"
+        # elif self.model_name == "Equall/Saul-7B-Instruct-v1":
+        #     close_tag = "[/INST']"
+        close_tag = "[/INST]"
+        idx = response.find(close_tag)
+        if idx != -1:
+            response = response[idx + len(close_tag):]  
+        # run your other string‑trims
+        # for pattern in self.clean_str:
+        #     cut = response.find(pattern)
+        #     if cut != -1:
+        #         response = response[:cut]
+        return response.lstrip()        # strip leading spaces / newlines
 
     def wrap_prompt(self, prompt):
         """
@@ -91,6 +99,19 @@ class BaseModel:
         assistant_header = "<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
         return f"{system_header}{prompt}{assistant_header}"
 
+    # def wrap_prompt(self, prompt):
+    #     header = (
+    #         "You are a legal reasoning assistant.\n"
+    #         "**Rules you must follow for every reply**\n"
+    #         "1. Think between <think> and </think> tags.\n"
+    #         "2. In your response, output **only one word** and the **answer only**.\n"
+    #         "3. Output nothing else—no punctuation, no explanations, no extra words.\n"
+    #         "<｜end▁of▁sentence｜><｜User｜>"
+    #     )
+    #     footer = (
+    #         "<｜Assistant｜><think>"
+    #     )
+    #     return f"{header}{prompt}{footer}"
 
 class HFModel(BaseModel):
     def __init__(self, model_name, max_output_tokens=None, **kwargs):
@@ -153,7 +174,8 @@ class HFModel(BaseModel):
 
         generated_tokens = outputs[0][input_ids.shape[-1]:]
         result = self.tokenizer.decode(generated_tokens, skip_special_tokens=True)
-        # result = self._clean_response(result)
+        result = self._clean_response(result)
+        # result = self.extract_single_choice(result)
         
         # --- free CUDA & CPU memory no longer needed ---
         del outputs, generated_tokens, input_ids
@@ -161,6 +183,22 @@ class HFModel(BaseModel):
             del attention_mask
         torch.cuda.empty_cache()   # release unreferenced CUDA memory
         gc.collect()              # encourage Python to free CPU objects
+
+        return result
+
+class HFModelPipeline(BaseModel):
+    def __init__(self, model_name, device=None, **kwargs):
+        super().__init__()
+        self.pipe = pipeline("text-generation", model=model_name, torch_dtype=torch.bfloat16, device_map="auto")
+
+    def query(self, prompt):
+        messages = [
+            {"role": "user", "content": prompt}
+        ]
+        prompt = self.pipe.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        outputs = self.pipe(prompt, max_new_tokens=MAX_NEW_TOKENS, do_sample=False)
+        result = outputs[0]["generated_text"]
+        result = self._clean_response(result)
 
         return result
     

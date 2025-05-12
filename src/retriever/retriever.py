@@ -204,6 +204,7 @@ def setup_faiss_index(json_files, dataset_dir="faiss_data",
 
 def fetch_doc(doc_id):
     file_path, offset = OFFSETS[doc_id]
+    file_path = file_path.replace("corpus/", "/mnt/data2/dataset/pile-of-law-chunked/")
     with open(file_path, "rb") as f:
         f.seek(offset)
         line = f.readline().decode("utf-8")

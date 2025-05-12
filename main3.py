@@ -6,13 +6,13 @@ from src.model import create_model
 from src.evaluation import evaluate
 from src import dataset_utils
 
-from src.retriever.retriever import retrieve, setup_faiss_index, clean_document
+from src.retriever.retriever import retrieve, setup_faiss_index, clean_document, fetch_doc
 from src.defense import MajorityVoting3
 from src.attack import PIA, Poison
 from src.pirac.irac import IRAC#, PIRAC
 from src.pirac.irac_batch import IRACBatch
 
-from legalbench.tasks import TASKS
+from legalbench.tasks import TASKS, ISSUE_TASKS, RULE_TASKS, INTERPRETATION_TASKS, CONCLUSION_TASKS, RHETORIC_TASKS
 
 import random
 import torch
@@ -33,7 +33,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Legal RAG hyperparam sweep & Testing')
     
     # LLM settings
-    parser.add_argument('--model_name', type=str, default='deepseek-r1-1.5b', choices=['llama7b', 'llama3.2-1b', 'llama3qa-8b', 'deepseek-r1-1.5b', 'saul7b'], help='model to use')
+    parser.add_argument('--model_name', type=str, default='deepseek-r1-1.5b', choices=['llama7b', 'llama3.2-1b', 'llama3qa-8b', 'deepseek-r1-1.5b', 'saul7b', 'llama3.1-8b'], help='model to use')
     parser.add_argument('--dataset_name', type=str, default='legalbench', help='dataset to use')
 
     # Attack
@@ -64,7 +64,7 @@ def main():
     
     if args.dataset_name == "legalbench":
         #tasks = ["cuad_affiliate_license-licensee", "cuad_no-solicit_of_employees", "cuad_price_restrictions", "cuad_warranty_duration"]
-        tasks = TASKS
+        tasks = INTERPRETATION_TASKS
         split = "test"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
@@ -73,10 +73,16 @@ def main():
         pass
 
     if args.use_rag:
-        json_files = ["corpus/state_code.jsonl", "corpus/uscode.jsonl", "corpus/canadian_decisions.jsonl", "corpus/cc_casebooks.jsonl",
-                      "corpus/cfr.jsonl", "corpus/courtlisteneropinions_sampled.jsonl", "corpus/echr.jsonl", "corpus/eurlex.jsonl",
-                      "corpus/taxrulings.jsonl"]
-        faiss_index, retrieval_documents, retriever_model = setup_faiss_index(json_files)
+        json_files = ["/mnt/data2/dataset/pile-of-law-chunked/canadian_decisions.jsonl",
+                      "/mnt/data2/dataset/pile-of-law-chunked/cc_casebooks.jsonl",
+                      "/mnt/data2/dataset/pile-of-law-chunked/cfr.jsonl",
+                      "/mnt/data2/dataset/pile-of-law-chunked/courtlisteneropinons_sampled.jsonl",
+                      "/mnt/data2/dataset/pile-of-law-chunked/echr.jsonl",
+                      "/mnt/data2/dataset/pile-of-law-chunked/eurlex.jsonl",
+                      "/mnt/data2/dataset/pile-of-law-chunked/uscode.jsonl",
+                      "/mnt/data2/dataset/pile-of-law-chunked/state_code.jsonl", 
+                      "/mnt/data2/dataset/pile-of-law-chunked/taxrulings.jsonl"]
+        faiss_index, offsets, retriever_model = setup_faiss_index(json_files)
 
     # Create LLM
     llm = create_model(args.model_name)
@@ -93,6 +99,7 @@ def main():
 
     # ─── 스윕 루프 ───
     for top_k in args.top_k:
+        top_k = 3
         no_defense = args.defense == 'none' or top_k <= 0
         no_attack = args.attack == 'none' or top_k <= 0
 
@@ -106,7 +113,7 @@ def main():
             raise NotImplementedError
 
         if args.use_irac:
-            LOG_NAME = f"{args.dataset_name}-{args.model_name}-{args.attack}-{args.defense}-IRAC-k{top_k}"
+            LOG_NAME = f"INTERPRET-{args.dataset_name}-{args.model_name}-{args.attack}-{args.defense}-IRAC-k{top_k}"
         else:
             LOG_NAME = f"{args.dataset_name}-{args.model_name}-{args.attack}-{args.defense}-k{top_k}"
         os.makedirs("log", exist_ok=True)
@@ -115,8 +122,10 @@ def main():
         if root_logger.hasHandlers():
             root_logger.handlers.clear()
         logging.basicConfig(
+            level=logging_level,
             format='%(asctime)s - %(levelname)s - %(name)s - %(message)s',
             handlers=[logging.FileHandler(f"log/{LOG_NAME}.log"), logging.StreamHandler()],
+            force=True
         )
         logger = logging.getLogger(__name__)
         logger.setLevel(logging_level)
@@ -136,12 +145,13 @@ def main():
             for prompt in tqdm(prompts, desc=f"Processing {task_name}", unit="query"):
                 if args.use_rag:
                     logger.info(f"Retrieving documents for query: {prompt}")
-                    retrieved_docs = retrieve(prompt, faiss_index, retrieval_documents, retriever_model, top_k=top_k)
+                    doc_ids = retrieve(prompt, faiss_index, retriever_model, top_k)
+                    retrieved_docs = [fetch_doc(doc_id) for doc_id in doc_ids]
                     
                     if args.use_irac:
                         logger.info(f"Using IRAC_Batch")
                         if not no_attack:
-                            retrieved_docs = attacker.attack(retrieved_docs, task_name)
+                            retrieved_docs = attacker.attack(retrieved_docs, task_name)                   
 
                         if not no_defense:
                             logger.info(f"Using Majority Voting")
@@ -149,9 +159,9 @@ def main():
                                 retrieved_docs = retrieved_docs,
                                 prompt = prompt,
                                 labels= labels,
-                                corruption_size=args.corruption_size,
                                 irac=irac
                             )
+                            logger.info(f"Response: {resp}")
                         else:
                             irac_outputs = irac.run(query=prompt , docs=retrieved_docs)
                             resp, cert = irac_outputs, None
@@ -217,6 +227,7 @@ def main():
         with open(f"results/{LOG_NAME}/eval.json", "w") as f:
             json.dump(evaluation_score, f, indent=4)
         logger.info(f"Run complete: {LOG_NAME}")
+        exit()
 
                 
 if __name__ == '__main__':
