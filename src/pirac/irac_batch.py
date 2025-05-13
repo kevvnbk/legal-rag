@@ -53,17 +53,21 @@ class IRACBatch:
         context = " ".join(map(str, docs)) if docs else query
 
         # 1. One-shot draft ------------------------------------------------------
-        raw_irac = self._generate_irac(query, context) 
+        raw_irac = self._generate_irac(query, context)
         parts = self._split_irac(raw_irac)
 
         # 2. Entailment repair loop ---------------------------------------------
+        repaired_context = ""
         for section in self.SECTIONS:
-            parts[section] = self._ensure_entailment(
+            premise_with_history = context + "\n" + repaired_context
+            repaired_section = self._ensure_entailment(
                 section_name=section,
-                premise=context,
+                premise=premise_with_history,
                 initial_text=parts[section],
                 query=query,
             )
+            parts[section] = repaired_section
+            repaired_context += f"{section.upper()}: {repaired_section}\n"
             logger.debug(f"Final {section}: {parts[section]}")
 
         # 3. Classification among provided labels
@@ -89,7 +93,7 @@ class IRACBatch:
             "followed by a colon. Example:\n"
             "ISSUE: ...\nRULE: ...\nAPPLICATION: ...\nCONCLUSION: ...\n\n"
             f"Query: {query}\n"
-            f"Context: {context}\n\n"
+            # f"Context: {context}\n\n"
         )
 
         generated = self.llm.query(prompt)

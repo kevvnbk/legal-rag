@@ -13,6 +13,7 @@ from src.pirac.irac import IRAC#, PIRAC
 from src.pirac.irac_batch import IRACBatch
 
 from legalbench.tasks import TASKS, ISSUE_TASKS, RULE_TASKS, INTERPRETATION_TASKS, CONCLUSION_TASKS, RHETORIC_TASKS
+from tasks import TASK_A, TASK_B
 
 import random
 import torch
@@ -64,7 +65,7 @@ def main():
     
     if args.dataset_name == "legalbench":
         #tasks = ["cuad_affiliate_license-licensee", "cuad_no-solicit_of_employees", "cuad_price_restrictions", "cuad_warranty_duration"]
-        tasks = INTERPRETATION_TASKS
+        tasks = TASK_A
         split = "test"
         data_tool = dataset_utils.load_data(args.dataset_name, tasks=tasks, split=split)
         dataset = data_tool.get_data()
@@ -113,9 +114,9 @@ def main():
             raise NotImplementedError
 
         if args.use_irac:
-            LOG_NAME = f"INTERPRET-{args.dataset_name}-{args.model_name}-{args.attack}-{args.defense}-IRAC-k{top_k}"
+            LOG_NAME = f"TASK_A-IRAC-NoRAG-entail-{args.dataset_name}-{args.model_name}-{args.attack}-{args.defense}-IRAC-k{top_k}"
         else:
-            LOG_NAME = f"{args.dataset_name}-{args.model_name}-{args.attack}-{args.defense}-k{top_k}"
+            LOG_NAME = f"TASK_B-RAG-{args.dataset_name}-{args.model_name}-{args.attack}-{args.defense}-k{top_k}"
         os.makedirs("log", exist_ok=True)
 
         root_logger = logging.getLogger()
@@ -146,7 +147,8 @@ def main():
                 if args.use_rag:
                     logger.info(f"Retrieving documents for query: {prompt}")
                     doc_ids = retrieve(prompt, faiss_index, retriever_model, top_k)
-                    retrieved_docs = [fetch_doc(doc_id) for doc_id in doc_ids]
+                    # retrieved_docs = [fetch_doc(doc_id) for doc_id in doc_ids]
+                    retrieved_docs = [" "]
                     
                     if args.use_irac:
                         logger.info(f"Using IRAC_Batch")
@@ -186,13 +188,11 @@ def main():
                             )
                         else:
                             rag_prompt = (
-                                    "You are a legal reasoning assistant. Using the legal materials below, "
-                                    f"Answer with exactly one of the following options: {', '.join(labels)}."
-                                    "Query:\n"
+                                    "Using the legal materials below, answer the question.\n\n"
+                                    "Question:\n"
                                     f"{prompt}\n\n"
                                     "Legal Materials:\n"
                                     f"\"{retrieved_docs}\"\n\n"
-                                    f"Answer ({' or '.join(labels)}):"
                             )
                             logger.debug(f"RAG prompt:\n{rag_prompt}")
                             resp, cert = llm.query(rag_prompt), None
@@ -203,14 +203,7 @@ def main():
                 # Not using RAG
                 # if LLM don't use RAG, then not use MV.       
                 else:
-                    new_prompt = (
-                        "You are a legal reasoning assistant."
-                        f"Answer with exactly one of the following options: {', '.join(labels)}."
-                        f"{prompt}\n"
-                        f"Answer ({', '.join(labels)}):"
-                        "Just answer only your answer! Do not attach 'Answer:'"
-                    )
-                    resp = llm.query(new_prompt)
+                    resp = llm.query(prompt)
                     cert = None
                     logger.info(f"Response: {resp}")
                     

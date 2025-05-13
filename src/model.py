@@ -217,4 +217,5 @@ class HFModelBERT(BaseModel):
             probs = logits.softmax(dim=-1)[0]
         
         prob_neutral = probs[1].item()
-        return prob_neutral
+        prob_entailment = probs[0].item()
+        return prob_entailment
